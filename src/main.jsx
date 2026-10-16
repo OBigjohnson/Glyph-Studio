@@ -189,6 +189,7 @@ function SiteNav() {
     <button className="mobile-toggle" aria-label="Toggle menu" onClick={() => setOpen(!open)}>{open ? <X /> : <Menu />}</button>
     <nav className={open ? 'nav-links nav-open' : 'nav-links'}>
       <Link to="/portfolio">Selected work</Link><Link to="/#services">What we do</Link><Link to="/#studio">The studio</Link>
+      <Link to="/studio" className="nav-login">Studio sign in</Link>
       <Link to="/contact" className="nav-cta">Start a project <ArrowRight size={15} /></Link>
     </nav>
   </header>
