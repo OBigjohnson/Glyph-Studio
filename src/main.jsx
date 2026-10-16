@@ -653,6 +653,7 @@ function ProjectRequests() {
   const navigate = useNavigate()
   const [requests, setRequests] = useState(null)
   const [updatingId, setUpdatingId] = useState('')
+  const [deletingId, setDeletingId] = useState('')
   useEffect(() => {
     if (!supabase || !workspace?.id) return
     supabase.from('inquiries')
@@ -690,6 +691,17 @@ function ProjectRequests() {
     if (openChat && nextRequest.project_id) navigate(`/studio/projects/${nextRequest.project_id}?tab=conversation`)
   }
 
+  async function deleteRequest(request) {
+    if (!supabase || !workspace || !window.confirm(`Delete the project request from ${request.name}?${request.project_id ? ' The linked project and its conversations will be kept.' : ''}`)) return
+    setDeletingId(request.id)
+    const { data, error: deleteError } = await supabase.from('inquiries').delete()
+      .eq('id', request.id).eq('workspace_id', workspace.id).select('id')
+    setDeletingId('')
+    if (deleteError) setError(deleteError.message)
+    else if (!data?.length) setError('Request was not deleted. Refresh the page and check that you still have access to this workspace.')
+    else setRequests((current) => (current || []).filter((entry) => entry.id !== request.id))
+  }
+
   const newRequests = requests?.filter((request) => request.status === 'new').length || 0
   return <main className="studio-page">
     <StudioPageHeader kicker="YOUR STUDIO / INCOMING WORK" title="Every good thing<br />starts somewhere." />
@@ -702,6 +714,7 @@ function ProjectRequests() {
       {request.status === 'accepted' && request.project_id && <button className="button button-dark" onClick={() => navigate(`/studio/projects/${request.project_id}?tab=conversation`)}><MessageCircle size={15} /> Open chat</button>}
       {request.status === 'accepted' && !request.project_id && <button className="button button-dark" disabled={updatingId === request.id} onClick={() => updateStatus(request, 'accepted', true)}>{updatingId === request.id ? 'Opening…' : 'Set up chat'} <ArrowRight size={15} /></button>}
       {request.status !== 'accepted' && request.status !== 'declined' && <button className="button button-dark" disabled={updatingId === request.id} onClick={() => updateStatus(request, 'accepted', true)}>{updatingId === request.id ? 'Accepting…' : 'Accept & open chat'} <ArrowRight size={15} /></button>}
+      <button className="button button-danger" disabled={deletingId === request.id || updatingId === request.id} onClick={() => deleteRequest(request)} aria-label={`Delete request from ${request.name}`}>{deletingId === request.id ? 'Deleting…' : <><Trash2 size={15} /> Delete</>}</button>
     </article>)}</div> : <div className="studio-empty"><MessageCircle /><h3>No project requests yet.</h3><p>Requests from the public portfolio will appear here. Once someone submits the form, they’ll also get a client portal project to message you about.</p></div>}
   </main>
 }
@@ -1832,6 +1845,7 @@ function Finance() {
   const [sharingReceiptId, setSharingReceiptId] = useState('')
   const [deletingInvoiceId, setDeletingInvoiceId] = useState('')
   const [deletingReceiptId, setDeletingReceiptId] = useState('')
+  const [deletingExpenseId, setDeletingExpenseId] = useState('')
   const [receiptShareMessage, setReceiptShareMessage] = useState('')
   const [printInvoice, setPrintInvoice] = useState(null)
   useEffect(() => {
@@ -2033,6 +2047,16 @@ function Finance() {
     else setExpenses((current) => [result.data, ...current])
     setExpenseForm(false)
   }
+  async function deleteExpense(expense) {
+    if (!supabase || !workspace || !window.confirm(`Delete expense "${expense.description}" (${money(Number(expense.amount))})? This will reduce your recorded expenses and update the net total.`)) return
+    setDeletingExpenseId(expense.id)
+    const { data, error: deleteError } = await supabase.from('expenses').delete()
+      .eq('id', expense.id).eq('workspace_id', workspace.id).select('id')
+    setDeletingExpenseId('')
+    if (deleteError) setError(deleteError.message)
+    else if (!data?.length) setError('Expense was not deleted. Refresh the page and check that you still have access to this workspace.')
+    else setExpenses((current) => current.filter((entry) => entry.id !== expense.id))
+  }
   const totalPaid = invoices.reduce((sum, invoice) => sum + asRows(invoice.payments).filter((payment) => payment.status === 'succeeded').reduce((subtotal, payment) => subtotal + Number(payment.amount), 0), 0)
   const totalExpenses = expenses.reduce((sum, expense) => sum + Number(expense.amount), 0)
   const receipts = invoices.flatMap((invoice) => asRows(invoice.payments).flatMap((payment) => asRows(payment.receipts).filter((receipt) => receipt?.receipt_number).map((receipt) => ({ receipt, payment, invoice }))))
@@ -2047,7 +2071,7 @@ function Finance() {
     <div className="studio-section-heading"><div><p className="kicker">PAYMENT RECORDS</p><h2>Receipts</h2></div></div>
     {receipts.length ? <div className="record-list">{receipts.map(({ receipt, payment, invoice }) => <article className="record-row" key={receipt.receipt_number}><FileText /><div className="record-main"><b>{receipt.receipt_number} · {invoice.clients?.name || 'Client not linked'}</b><span>Invoice #{invoice.number} · {money(Number(payment.amount))} · {payment.paid_at ? new Date(payment.paid_at).toLocaleDateString() : new Date(receipt.issued_at).toLocaleDateString()}</span><small>{invoice.shared_with_client ? 'Client copy available in portal' : 'Client copy not shared yet'}</small></div><button className="button button-soft" onClick={() => setPrintInvoice({ ...invoice, receipt: { ...receipt, payment } })}>Print studio receipt</button><button className="button button-soft" onClick={() => setPrintInvoice({ ...invoice, receipt: { ...receipt, payment }, receiptAudience: 'client' })}>Print client copy</button><button className="button button-soft" disabled={!invoice.client_id || sharingReceiptId === receipt.receipt_number} onClick={() => shareReceipt(invoice, receipt)}>{sharingReceiptId === receipt.receipt_number ? 'Preparing…' : 'Copy client receipt link'}</button><button className="button button-danger" disabled={!receipt.id || deletingReceiptId === receipt.id} onClick={() => deleteReceipt(invoice, payment, receipt)} aria-label={`Delete receipt ${receipt.receipt_number}`}>{deletingReceiptId === receipt.id ? 'Deleting…' : <><Trash2 size={15} /> Delete</>}</button></article>)}</div> : <p className="empty-copy">Receipts generated from verified payments will be stored here.</p>}
     <div className="studio-section-heading"><div><p className="kicker">BUSINESS COSTS</p><h2>Expenses</h2></div></div>
-    {expenses.length ? <div className="record-list">{expenses.map((expense) => <div className="record-row" key={expense.id}><span className="project-index index-2"><FileText size={17} /></span><div className="record-main"><b>{expense.description}</b><span>{expense.category} · {expense.incurred_on}</span></div><b>{money(Number(expense.amount))}</b></div>)}</div> : <p className="empty-copy">Record business costs to calculate net income from real records.</p>}
+    {expenses.length ? <div className="record-list">{expenses.map((expense) => <div className="record-row" key={expense.id}><span className="project-index index-2"><FileText size={17} /></span><div className="record-main"><b>{expense.description}</b><span>{expense.category} · {expense.incurred_on}</span></div><b>{money(Number(expense.amount))}</b><button className="button button-danger" disabled={deletingExpenseId === expense.id} onClick={() => deleteExpense(expense)} aria-label={`Delete expense ${expense.description}`}>{deletingExpenseId === expense.id ? 'Deleting…' : <><Trash2 size={15} /> Delete</>}</button></div>)}</div> : <p className="empty-copy">Record business costs to calculate net income from real records.</p>}
     {invoiceForm && <Modal title="Create an invoice" onClose={() => setInvoiceForm(false)}><form onSubmit={createInvoice}><label>Invoice number<input name="number" required maxLength="80" placeholder="e.g. GL-001" /></label><label>Client<select name="client_id" defaultValue=""><option value="">No client linked</option>{clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label><label>Project<select name="project_id" defaultValue=""><option value="">No project linked</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label><label>Line item<input name="description" required maxLength="500" placeholder="Brand identity design" /></label><label>Amount (NGN)<input name="amount" type="number" required min="0.01" step="0.01" /></label><label>Due date<input name="due_date" type="date" /></label><p className="muted-copy">The invoice is recorded as open and can be shared to the client portal. Payment is tracked manually after verification.</p><button className="button button-dark" disabled={saving}>{saving ? 'Saving…' : 'Create invoice'} <ArrowRight size={15} /></button></form></Modal>}
     {manualPaymentInvoice && <Modal title={`Confirm payment for invoice ${manualPaymentInvoice.number}`} onClose={() => setManualPaymentInvoice(null)}><form onSubmit={recordManualPayment}><label>Amount received<input name="amount" type="number" required min="0.01" step="0.01" defaultValue={manualPaymentInvoice.amount} /></label><label>Bank transfer reference<input name="reference" placeholder="Optional transaction reference" maxLength="120" /></label><label>Payment date<input name="paid_on" type="date" defaultValue={new Date().toISOString().slice(0, 10)} /></label><label>Notes<textarea name="note" rows="3" placeholder="Bank transfer confirmation, account holder, or any matching details." maxLength="500" /></label><p className="muted-copy">This records a successful manual bank transfer and generates a receipt that can be printed and shared with the client.</p><button className="button button-dark" disabled={saving}>{saving ? 'Saving…' : 'Record payment'} <Check size={15} /></button></form></Modal>}
     {expenseForm && <Modal title="Record an expense" onClose={() => setExpenseForm(false)}><form onSubmit={createExpense}><label>Description<input name="description" required maxLength="240" /></label><label>Category<select name="category"><option value="other">Other</option><option value="production">Production</option><option value="software">Software</option><option value="equipment">Equipment</option><option value="travel">Travel</option><option value="contractor">Contractor</option></select></label><label>Project<select name="project_id" defaultValue=""><option value="">Studio-wide</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label><label>Amount (NGN)<input name="amount" required type="number" min="0.01" step="0.01" /></label><label>Date<input name="incurred_on" required type="date" defaultValue={new Date().toISOString().slice(0, 10)} /></label><button className="button button-dark" disabled={saving}>{saving ? 'Saving…' : 'Save expense'} <ArrowRight size={15} /></button></form></Modal>}
