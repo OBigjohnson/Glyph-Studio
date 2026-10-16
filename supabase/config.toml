@@ -1,0 +1,4 @@
+project_id = "glyph-studio"
+
+[auth.email]
+enable_confirmations = false
