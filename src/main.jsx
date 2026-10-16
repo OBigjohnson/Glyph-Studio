@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { ArrowDownRight, ArrowLeft, ArrowRight, CalendarDays, Check, ChevronLeft, ChevronRight, CircleUserRound, Copy, Download, ExternalLink, FileText, FolderKanban, ImagePlus, Link2, LockKeyhole, LogOut, Menu, MessageCircle, Palette, Plus, Search, Send, Settings2, Sparkles, Users, X } from 'lucide-react'
+import { ArrowDownRight, ArrowLeft, ArrowRight, CalendarDays, Check, ChevronLeft, ChevronRight, CircleUserRound, Copy, Download, ExternalLink, FileText, FolderKanban, ImagePlus, Link2, LockKeyhole, LogOut, Menu, MessageCircle, Palette, Plus, Search, Send, Settings2, Sparkles, Trash2, Users, X } from 'lucide-react'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { ProtectedRoute } from './auth/ProtectedRoute'
 import { supabase, supabaseUrl, isSupabaseConfigured, supabaseConfigMessage } from './lib/supabase'
@@ -747,6 +747,7 @@ function Clients() {
   const [items, setItems] = useState(null)
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [deletingId, setDeletingId] = useState('')
   const [inviteLink, setInviteLink] = useState('')
   useEffect(() => {
     if (!supabase || !workspace?.id) return
@@ -769,7 +770,17 @@ function Clients() {
     if (result.error) setError(result.error.message)
     else setInviteLink(`${window.location.origin}${appPath('/portal')}?invite=${result.data.token}`)
   }
-  return <main className="studio-page"><StudioPageHeader kicker="PEOPLE / CLIENTS" title="The people<br />behind the work." action={<button className="button button-yellow" onClick={() => setEditing(true)} disabled={!workspace}><Plus size={16} /> Add a client</button>} />{error && <p className="notice-error">{error}</p>}{inviteLink && <div className="invite-share"><b>Client portal invitation</b><p>Send this private link to the matching client email:</p><input value={inviteLink} readOnly onFocus={(event) => event.target.select()} /></div>}{items === null ? <p className="loading-copy">Loading your clients…</p> : items.length ? <div className="record-list">{items.map((client) => <article className="record-row" key={client.id}><div className="record-avatar">{client.name.slice(0, 1).toUpperCase()}</div><div className="record-main"><b>{client.name}</b><span>{client.company || 'Independent client'}{client.email ? ` · ${client.email}` : ''}</span>{client.notes && <small>{client.notes}</small>}</div>{client.email && <button className="button button-soft" onClick={() => invite(client)}>Invite</button>}<Link className="quiet-link" to={`/studio/clients/${client.id}`}>Open <ArrowRight size={15} /></Link></article>)}</div> : <EmptyRecord title="No client records yet" text="Create a client record to link together their projects, discussions, and invoices." onCreate={() => setEditing(true)} />}{editing && <Modal title="Add a client" onClose={() => setEditing(false)}><form onSubmit={save}><label>Client name<input name="name" required maxLength="160" /></label><div className="form-split"><label>Email<input name="email" type="email" maxLength="254" /></label><label>Phone<input name="phone" type="tel" maxLength="40" /></label></div><label>Company<input name="company" maxLength="160" /></label><label>Studio notes<textarea name="notes" rows="3" maxLength="5000" /></label><button className="button button-dark" disabled={saving}>{saving ? 'Saving…' : 'Save client'} <ArrowRight size={15} /></button></form></Modal>}</main>
+  async function deleteClient(client) {
+    if (!supabase || !workspace || !window.confirm(`Delete client "${client.name}"? Their portal access and invitations will be removed. Linked projects and invoices will remain, but will be unlinked from this client.`)) return
+    setDeletingId(client.id)
+    const { data, error: deleteError } = await supabase.from('clients').delete()
+      .eq('id', client.id).eq('workspace_id', workspace.id).select('id')
+    setDeletingId('')
+    if (deleteError) setError(deleteError.message)
+    else if (!data?.length) setError('Client was not deleted. Refresh the page and check that you still have access to this workspace.')
+    else setItems((current) => (current || []).filter((entry) => entry.id !== client.id))
+  }
+  return <main className="studio-page"><StudioPageHeader kicker="PEOPLE / CLIENTS" title="The people<br />behind the work." action={<button className="button button-yellow" onClick={() => setEditing(true)} disabled={!workspace}><Plus size={16} /> Add a client</button>} />{error && <p className="notice-error">{error}</p>}{inviteLink && <div className="invite-share"><b>Client portal invitation</b><p>Send this private link to the matching client email:</p><input value={inviteLink} readOnly onFocus={(event) => event.target.select()} /></div>}{items === null ? <p className="loading-copy">Loading your clients…</p> : items.length ? <div className="record-list">{items.map((client) => <article className="record-row" key={client.id}><div className="record-avatar">{client.name.slice(0, 1).toUpperCase()}</div><div className="record-main"><b>{client.name}</b><span>{client.company || 'Independent client'}{client.email ? ` · ${client.email}` : ''}</span>{client.notes && <small>{client.notes}</small>}</div>{client.email && <button className="button button-soft" onClick={() => invite(client)}>Invite</button>}<Link className="quiet-link" to={`/studio/clients/${client.id}`}>Open <ArrowRight size={15} /></Link><button className="button button-danger" disabled={deletingId === client.id} onClick={() => deleteClient(client)} aria-label={`Delete ${client.name}`}>{deletingId === client.id ? 'Deleting…' : <><Trash2 size={15} /> Delete</>}</button></article>)}</div> : <EmptyRecord title="No client records yet" text="Create a client record to link together their projects, discussions, and invoices." onCreate={() => setEditing(true)} />}{editing && <Modal title="Add a client" onClose={() => setEditing(false)}><form onSubmit={save}><label>Client name<input name="name" required maxLength="160" /></label><div className="form-split"><label>Email<input name="email" type="email" maxLength="254" /></label><label>Phone<input name="phone" type="tel" maxLength="40" /></label></div><label>Company<input name="company" maxLength="160" /></label><label>Studio notes<textarea name="notes" rows="3" maxLength="5000" /></label><button className="button button-dark" disabled={saving}>{saving ? 'Saving…' : 'Save client'} <ArrowRight size={15} /></button></form></Modal>}</main>
 }
 
 function ClientDetail() {
@@ -803,6 +814,7 @@ function Projects() {
   const [clients, setClients] = useState([])
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [deletingId, setDeletingId] = useState('')
   useEffect(() => {
     if (!supabase || !workspace?.id) return
     Promise.all([
@@ -830,7 +842,17 @@ function Projects() {
       setEditing(false)
     }
   }
-  return <main className="studio-page"><StudioPageHeader kicker="THE WORK / PROJECTS" title="Make space<br />for the work." action={<button className="button button-yellow" disabled={!workspace} onClick={() => setEditing(true)}><Plus size={16} /> New project</button>} />{error && <p className="notice-error">{error}</p>}{items === null ? <p className="loading-copy">Loading projects…</p> : items.length ? <div className="record-list">{items.map((project, index) => <article className="record-row project-record" key={project.id}><Link className="project-row-main" to={`/studio/projects/${project.id}`}><span className={`project-index index-${index % 3}`}>0{index + 1}</span><span className="record-main"><b>{project.name}</b><span>{project.clients?.name || 'No client linked'} · {project.service || 'Creative project'}</span><small>{project.status.replaceAll('_', ' ')}{project.due_date ? ` · Due ${project.due_date}` : ''}</small></span><ArrowRight size={17} /></Link><Link className="button button-soft project-chat-link" to={`/studio/projects/${project.id}?tab=conversation`}><MessageCircle size={15} /> Chat</Link></article>)}</div> : <EmptyRecord title="A good project, all in one place." text="Start with a client, a brief, and a deadline. You can add notes, tasks, decisions, and Drive links inside." onCreate={() => setEditing(true)} />}{editing && <Modal title="Start a project" onClose={() => setEditing(false)}><form onSubmit={save}><label>Project name<input name="name" required maxLength="180" placeholder="e.g. A new identity for…" /></label><label>Client<select name="client_id" defaultValue=""><option value="">No client linked</option>{clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select>{!clients.length && <small>Add a client record first, or leave this unassigned.</small>}</label><label>Service<select name="service" defaultValue=""><option value="">Choose a service</option>{services.map((service) => <option key={service}>{service}</option>)}</select></label><label>Project brief<textarea name="brief" rows="4" maxLength="10000" placeholder="The goal, scope, and what success looks like…" /></label><label>Deadline<input type="date" name="due_date" /></label><label className="check-label"><input name="share_with_client" type="checkbox" /> Share this project in the client portal</label><button className="button button-dark" disabled={saving}>{saving ? 'Creating…' : 'Create project'} <ArrowRight size={15} /></button></form></Modal>}</main>
+  async function deleteProject(project) {
+    if (!supabase || !workspace || !window.confirm(`Delete project "${project.name}"? Its tasks, notes, links, messages, and feedback will be deleted. Linked invoices, expenses, and portfolio items will remain without this project link.`)) return
+    setDeletingId(project.id)
+    const { data, error: deleteError } = await supabase.from('projects').delete()
+      .eq('id', project.id).eq('workspace_id', workspace.id).select('id')
+    setDeletingId('')
+    if (deleteError) setError(deleteError.message)
+    else if (!data?.length) setError('Project was not deleted. Refresh the page and check that you still have access to this workspace.')
+    else setItems((current) => (current || []).filter((entry) => entry.id !== project.id))
+  }
+  return <main className="studio-page"><StudioPageHeader kicker="THE WORK / PROJECTS" title="Make space<br />for the work." action={<button className="button button-yellow" disabled={!workspace} onClick={() => setEditing(true)}><Plus size={16} /> New project</button>} />{error && <p className="notice-error">{error}</p>}{items === null ? <p className="loading-copy">Loading projects…</p> : items.length ? <div className="record-list">{items.map((project, index) => <article className="record-row project-record" key={project.id}><Link className="project-row-main" to={`/studio/projects/${project.id}`}><span className={`project-index index-${index % 3}`}>0{index + 1}</span><span className="record-main"><b>{project.name}</b><span>{project.clients?.name || 'No client linked'} · {project.service || 'Creative project'}</span><small>{project.status.replaceAll('_', ' ')}{project.due_date ? ` · Due ${project.due_date}` : ''}</small></span><ArrowRight size={17} /></Link><Link className="button button-soft project-chat-link" to={`/studio/projects/${project.id}?tab=conversation`}><MessageCircle size={15} /> Chat</Link><button className="button button-danger" disabled={deletingId === project.id} onClick={() => deleteProject(project)} aria-label={`Delete ${project.name}`}>{deletingId === project.id ? 'Deleting…' : <><Trash2 size={15} /> Delete</>}</button></article>)}</div> : <EmptyRecord title="A good project, all in one place." text="Start with a client, a brief, and a deadline. You can add notes, tasks, decisions, and Drive links inside." onCreate={() => setEditing(true)} />}{editing && <Modal title="Start a project" onClose={() => setEditing(false)}><form onSubmit={save}><label>Project name<input name="name" required maxLength="180" placeholder="e.g. A new identity for…" /></label><label>Client<select name="client_id" defaultValue=""><option value="">No client linked</option>{clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select>{!clients.length && <small>Add a client record first, or leave this unassigned.</small>}</label><label>Service<select name="service" defaultValue=""><option value="">Choose a service</option>{services.map((service) => <option key={service}>{service}</option>)}</select></label><label>Project brief<textarea name="brief" rows="4" maxLength="10000" placeholder="The goal, scope, and what success looks like…" /></label><label>Deadline<input type="date" name="due_date" /></label><label className="check-label"><input name="share_with_client" type="checkbox" /> Share this project in the client portal</label><button className="button button-dark" disabled={saving}>{saving ? 'Creating…' : 'Create project'} <ArrowRight size={15} /></button></form></Modal>}</main>
 }
 
 function ProjectRoom() {
@@ -1808,12 +1830,14 @@ function Finance() {
   const [saving, setSaving] = useState(false)
   const [sharingInvoiceId, setSharingInvoiceId] = useState('')
   const [sharingReceiptId, setSharingReceiptId] = useState('')
+  const [deletingInvoiceId, setDeletingInvoiceId] = useState('')
+  const [deletingReceiptId, setDeletingReceiptId] = useState('')
   const [receiptShareMessage, setReceiptShareMessage] = useState('')
   const [printInvoice, setPrintInvoice] = useState(null)
   useEffect(() => {
     if (!supabase || !workspace?.id) return
     Promise.all([
-      supabase.from('invoices').select('id, client_id, shared_with_client, number, amount, currency, status, due_date, created_at, clients(name, email, company), invoice_items(description, quantity, unit_amount), payments(amount, status, paid_at, receipts(receipt_number, issued_at))').eq('workspace_id', workspace.id).order('created_at', { ascending: false }),
+      supabase.from('invoices').select('id, client_id, shared_with_client, number, amount, currency, status, due_date, created_at, clients(name, email, company), invoice_items(description, quantity, unit_amount), payments(id, amount, status, paid_at, receipts(id, receipt_number, issued_at))').eq('workspace_id', workspace.id).order('created_at', { ascending: false }),
       supabase.from('expenses').select('id, description, category, amount, incurred_on').eq('workspace_id', workspace.id).order('incurred_on', { ascending: false }),
       supabase.from('clients').select('id, name').eq('workspace_id', workspace.id).order('name'),
       supabase.from('projects').select('id, name').eq('workspace_id', workspace.id).order('name'),
@@ -1865,7 +1889,7 @@ function Finance() {
         return
       }
     }
-    const invoice = await supabase.from('invoices').select('id, client_id, shared_with_client, number, amount, currency, status, due_date, created_at, clients(name, email, company), invoice_items(description, quantity, unit_amount), payments(amount, status, paid_at, receipts(receipt_number, issued_at))').eq('id', result.data).single()
+    const invoice = await supabase.from('invoices').select('id, client_id, shared_with_client, number, amount, currency, status, due_date, created_at, clients(name, email, company), invoice_items(description, quantity, unit_amount), payments(id, amount, status, paid_at, receipts(id, receipt_number, issued_at))').eq('id', result.data).single()
     setSaving(false)
     if (invoice.error) setError(invoice.error.message)
     else setInvoices((current) => [invoice.data, ...current])
@@ -1886,6 +1910,39 @@ function Finance() {
     setInvoices((current) => current.map((entry) => entry.id === invoice.id
       ? { ...entry, shared_with_client: !invoice.shared_with_client }
       : entry))
+  }
+  async function deleteInvoice(invoice) {
+    if (!supabase || !workspace || !window.confirm(`Delete invoice #${invoice.number}? Its line items, payment records, and receipts will also be permanently deleted. The income total will be reduced by any recorded payments.`)) return
+    setDeletingInvoiceId(invoice.id)
+    const { data, error: deleteError } = await supabase.from('invoices').delete()
+      .eq('id', invoice.id).eq('workspace_id', workspace.id).select('id')
+    setDeletingInvoiceId('')
+    if (deleteError) setError(deleteError.message)
+    else if (!data?.length) setError('Invoice was not deleted. Refresh the page and check that you still have access to this workspace.')
+    else setInvoices((current) => current.filter((entry) => entry.id !== invoice.id))
+  }
+  async function deleteReceipt(invoice, payment, receipt) {
+    if (!supabase || !workspace || !receipt.id) return
+    if (!window.confirm(`Delete receipt ${receipt.receipt_number}? The payment record will remain in the income ledger, but the receipt will no longer be available to print or share.`)) return
+    setDeletingReceiptId(receipt.id)
+    const { data, error: deleteError } = await supabase.from('receipts').delete()
+      .eq('id', receipt.id).eq('payment_id', payment.id).select('id')
+    setDeletingReceiptId('')
+    if (deleteError) {
+      setError(deleteError.message)
+      return
+    }
+    if (!data?.length) {
+      setError('Receipt was not deleted. Refresh the page and check that it still exists.')
+      return
+    }
+    setInvoices((current) => current.map((entry) => entry.id !== invoice.id ? entry : {
+      ...entry,
+      payments: asRows(entry.payments).map((entryPayment) => entryPayment.id !== payment.id ? entryPayment : {
+        ...entryPayment,
+        receipts: asRows(entryPayment.receipts).filter((entryReceipt) => entryReceipt.id !== receipt.id),
+      }),
+    }))
   }
   async function shareReceipt(invoice, receipt) {
     if (!supabase || !invoice.client_id) {
@@ -1936,22 +1993,24 @@ function Finance() {
       setError(paymentError.message)
       return
     }
+    const paymentResult = await supabase.from('payments')
+      .select('id, amount, status, paid_at, receipts(id, receipt_number, issued_at)')
+      .eq('id', data.payment_id).single()
+    if (paymentResult.error) setError(`Payment was recorded, but its receipt details could not be loaded: ${paymentResult.error.message}`)
+    const recordedPayment = paymentResult.data || {
+      id: data.payment_id,
+      amount,
+      status: 'succeeded',
+      paid_at: data.paid_at,
+      receipts: [{ receipt_number: data.receipt_number, issued_at: data.paid_at }],
+    }
     const invoiceUpdate = {
       ...manualPaymentInvoice,
       status: data?.status || 'paid',
-      payments: [
-        ...(manualPaymentInvoice.payments || []),
-        {
-          id: data?.payment_id,
-          amount: String(amount),
-          status: 'succeeded',
-          paid_at: data?.paid_at,
-          receipts: [{ receipt_number: data?.receipt_number, issued_at: data?.paid_at }],
-        },
-      ],
+      payments: [...(manualPaymentInvoice.payments || []), recordedPayment],
     }
     setInvoices((current) => current.map((entry) => entry.id === manualPaymentInvoice.id ? invoiceUpdate : entry))
-    const receipt = { receipt_number: data?.receipt_number, issued_at: data?.paid_at, payment: { amount: String(amount), paid_at: data?.paid_at } }
+    const receipt = { ...asRows(recordedPayment.receipts)[0], receipt_number: data?.receipt_number, issued_at: data?.paid_at, payment: { amount: String(amount), paid_at: data?.paid_at } }
     setPrintInvoice({ ...invoiceUpdate, receipt })
     setManualPaymentInvoice(null)
   }
@@ -1984,9 +2043,9 @@ function Finance() {
     <div className="finance-note"><LockKeyhole size={18} /><div><b>Manual bank transfer is enabled.</b><span>Share the invoice with the client and record a payment after you verify the transfer. A receipt is generated inside the app and added to the income total.</span></div></div>
     <div className="dashboard-stats finance-stats"><div><span>INCOME</span><b>{money(totalPaid)}</b></div><div><span>RECORDED EXPENSES</span><b>{money(totalExpenses)}</b></div><div><span>NET (RECORDED)</span><b>{money(totalPaid - totalExpenses)}</b></div></div>
     <div className="studio-section-heading"><div><p className="kicker">STUDIO RECORDS</p><h2>Invoices</h2></div></div>
-    {invoices.length ? <div className="record-list">{invoices.map((invoice) => <div className="record-row" key={invoice.id}><FileText /><div className="record-main"><b>#{invoice.number} · {invoice.clients?.name || 'Client not linked'}</b><span>{money(Number(invoice.amount))} · {invoice.status}</span>{asRows(invoice.payments).flatMap((payment) => asRows(payment.receipts)).filter((receipt) => receipt?.receipt_number).map((receipt) => <small key={receipt.receipt_number}>Verified receipt: {receipt.receipt_number}</small>)}</div><span className="muted-copy">{invoice.due_date || 'No due date'}</span><button className="button button-soft" onClick={() => setPrintInvoice(invoice)}>Print invoice</button><button className="button button-soft" onClick={() => setManualPaymentInvoice(invoice)}>Record payment</button><button className="button button-soft" disabled={!invoice.client_id || sharingInvoiceId === invoice.id} onClick={() => toggleInvoicePortal(invoice)}>{sharingInvoiceId === invoice.id ? 'Updating…' : invoice.shared_with_client ? 'Remove portal access' : invoice.client_id ? 'Share to client portal' : 'Link a client first'}</button></div>)}</div> : <div className="studio-empty"><FileText /><h3>No invoices yet.</h3><p>Create a draft invoice for a client or project. Once a transfer is verified, record the payment to generate a receipt and move the income into the ledger.</p><button className="button button-dark" onClick={() => setInvoiceForm(true)}><Plus size={15} /> Create invoice</button></div>}
+    {invoices.length ? <div className="record-list">{invoices.map((invoice) => <div className="record-row" key={invoice.id}><FileText /><div className="record-main"><b>#{invoice.number} · {invoice.clients?.name || 'Client not linked'}</b><span>{money(Number(invoice.amount))} · {invoice.status}</span>{asRows(invoice.payments).flatMap((payment) => asRows(payment.receipts)).filter((receipt) => receipt?.receipt_number).map((receipt) => <small key={receipt.receipt_number}>Verified receipt: {receipt.receipt_number}</small>)}</div><span className="muted-copy">{invoice.due_date || 'No due date'}</span><button className="button button-soft" onClick={() => setPrintInvoice(invoice)}>Print invoice</button><button className="button button-soft" onClick={() => setManualPaymentInvoice(invoice)}>Record payment</button><button className="button button-soft" disabled={!invoice.client_id || sharingInvoiceId === invoice.id} onClick={() => toggleInvoicePortal(invoice)}>{sharingInvoiceId === invoice.id ? 'Updating…' : invoice.shared_with_client ? 'Remove portal access' : invoice.client_id ? 'Share to client portal' : 'Link a client first'}</button><button className="button button-danger" disabled={deletingInvoiceId === invoice.id} onClick={() => deleteInvoice(invoice)} aria-label={`Delete invoice ${invoice.number}`}>{deletingInvoiceId === invoice.id ? 'Deleting…' : <><Trash2 size={15} /> Delete</>}</button></div>)}</div> : <div className="studio-empty"><FileText /><h3>No invoices yet.</h3><p>Create a draft invoice for a client or project. Once a transfer is verified, record the payment to generate a receipt and move the income into the ledger.</p><button className="button button-dark" onClick={() => setInvoiceForm(true)}><Plus size={15} /> Create invoice</button></div>}
     <div className="studio-section-heading"><div><p className="kicker">PAYMENT RECORDS</p><h2>Receipts</h2></div></div>
-    {receipts.length ? <div className="record-list">{receipts.map(({ receipt, payment, invoice }) => <article className="record-row" key={receipt.receipt_number}><FileText /><div className="record-main"><b>{receipt.receipt_number} · {invoice.clients?.name || 'Client not linked'}</b><span>Invoice #{invoice.number} · {money(Number(payment.amount))} · {payment.paid_at ? new Date(payment.paid_at).toLocaleDateString() : new Date(receipt.issued_at).toLocaleDateString()}</span><small>{invoice.shared_with_client ? 'Client copy available in portal' : 'Client copy not shared yet'}</small></div><button className="button button-soft" onClick={() => setPrintInvoice({ ...invoice, receipt: { ...receipt, payment } })}>Print studio receipt</button><button className="button button-soft" onClick={() => setPrintInvoice({ ...invoice, receipt: { ...receipt, payment }, receiptAudience: 'client' })}>Print client copy</button><button className="button button-soft" disabled={!invoice.client_id || sharingReceiptId === receipt.receipt_number} onClick={() => shareReceipt(invoice, receipt)}>{sharingReceiptId === receipt.receipt_number ? 'Preparing…' : 'Copy client receipt link'}</button></article>)}</div> : <p className="empty-copy">Receipts generated from verified payments will be stored here.</p>}
+    {receipts.length ? <div className="record-list">{receipts.map(({ receipt, payment, invoice }) => <article className="record-row" key={receipt.receipt_number}><FileText /><div className="record-main"><b>{receipt.receipt_number} · {invoice.clients?.name || 'Client not linked'}</b><span>Invoice #{invoice.number} · {money(Number(payment.amount))} · {payment.paid_at ? new Date(payment.paid_at).toLocaleDateString() : new Date(receipt.issued_at).toLocaleDateString()}</span><small>{invoice.shared_with_client ? 'Client copy available in portal' : 'Client copy not shared yet'}</small></div><button className="button button-soft" onClick={() => setPrintInvoice({ ...invoice, receipt: { ...receipt, payment } })}>Print studio receipt</button><button className="button button-soft" onClick={() => setPrintInvoice({ ...invoice, receipt: { ...receipt, payment }, receiptAudience: 'client' })}>Print client copy</button><button className="button button-soft" disabled={!invoice.client_id || sharingReceiptId === receipt.receipt_number} onClick={() => shareReceipt(invoice, receipt)}>{sharingReceiptId === receipt.receipt_number ? 'Preparing…' : 'Copy client receipt link'}</button><button className="button button-danger" disabled={!receipt.id || deletingReceiptId === receipt.id} onClick={() => deleteReceipt(invoice, payment, receipt)} aria-label={`Delete receipt ${receipt.receipt_number}`}>{deletingReceiptId === receipt.id ? 'Deleting…' : <><Trash2 size={15} /> Delete</>}</button></article>)}</div> : <p className="empty-copy">Receipts generated from verified payments will be stored here.</p>}
     <div className="studio-section-heading"><div><p className="kicker">BUSINESS COSTS</p><h2>Expenses</h2></div></div>
     {expenses.length ? <div className="record-list">{expenses.map((expense) => <div className="record-row" key={expense.id}><span className="project-index index-2"><FileText size={17} /></span><div className="record-main"><b>{expense.description}</b><span>{expense.category} · {expense.incurred_on}</span></div><b>{money(Number(expense.amount))}</b></div>)}</div> : <p className="empty-copy">Record business costs to calculate net income from real records.</p>}
     {invoiceForm && <Modal title="Create an invoice" onClose={() => setInvoiceForm(false)}><form onSubmit={createInvoice}><label>Invoice number<input name="number" required maxLength="80" placeholder="e.g. GL-001" /></label><label>Client<select name="client_id" defaultValue=""><option value="">No client linked</option>{clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label><label>Project<select name="project_id" defaultValue=""><option value="">No project linked</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label><label>Line item<input name="description" required maxLength="500" placeholder="Brand identity design" /></label><label>Amount (NGN)<input name="amount" type="number" required min="0.01" step="0.01" /></label><label>Due date<input name="due_date" type="date" /></label><p className="muted-copy">The invoice is recorded as open and can be shared to the client portal. Payment is tracked manually after verification.</p><button className="button button-dark" disabled={saving}>{saving ? 'Saving…' : 'Create invoice'} <ArrowRight size={15} /></button></form></Modal>}

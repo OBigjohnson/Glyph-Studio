@@ -36,6 +36,8 @@ img{display:block;max-width:100%}
 .button-yellow:hover:not(:disabled){background:#e8d817}
 .button-dark{background:var(--ink)}
 .button-soft{background:#f0eee8;color:#2e2d2a}
+.button-danger{background:#fde9e7;color:#a3271b}
+.button-danger:hover:not(:disabled){background:#f8d4d0}
 .button-outline{border-color:#c9c5bc;background:transparent;color:var(--ink)}
 .button-outline:hover:not(:disabled){border-color:var(--ink);background:var(--ink);color:white}
 .button-wide{width:100%;margin-top:6px}
@@ -461,7 +463,7 @@ input:focus,textarea:focus,select:focus{border-color:var(--blue);box-shadow:0 0 
  .dashboard-stats b{font-size:23px}
  .dashboard-stats .stat-studio{font-size:14px}
  .quick-grid{grid-template-columns:1fr}
- .record-row{gap:10px;padding-inline:1px}
+ .record-row{gap:10px;padding-inline:1px;flex-wrap:wrap}
  .record-row .button{padding-inline:10px}
  .record-main span,.record-main small{overflow-wrap:anywhere}
  .form-split{grid-template-columns:1fr}
