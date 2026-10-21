@@ -13,6 +13,10 @@ Previously created invoices linked to a client are also shared by the invoice
 visibility migration. A confirmed portal account is linked to client records
 only when its email matches the record's email.
 
+An invoice can contain multiple line items. Each item has a description,
+quantity, and unit price; the invoice total is calculated from the rounded
+line totals and appears in the client portal and printed invoice.
+
 The current workflow keeps things simple and reliable without a checkout gateway:
 
 1. In Studio Settings, the owner stores the bank name, account name, account

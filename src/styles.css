@@ -228,6 +228,16 @@ input:focus,textarea:focus,select:focus{border-color:var(--blue);box-shadow:0 0 
 .icon-button svg{width:17px;height:17px}
 .modal-card form>.button{margin-top:6px}
 .form-split{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.client-onboarding-options{display:grid;gap:12px;padding:15px;background:#eeece6}
+.client-onboarding-options>small{margin-top:-8px;color:var(--muted);font-size:11px;line-height:1.5}
+.invoice-line-items{display:grid;gap:12px;padding:15px;background:#eeece6}
+.invoice-line-items-heading{display:flex;justify-content:space-between;align-items:center}
+.invoice-line-items-heading>b,.invoice-total-preview{font-size:12px}
+.invoice-line-items-heading .button{min-height:34px}
+.invoice-line-row{display:grid;grid-template-columns:minmax(0,1fr) 66px minmax(100px,.75fr) 35px;gap:8px;align-items:end}
+.invoice-line-row label{min-width:0}
+.invoice-line-remove{margin-bottom:1px}
+.invoice-total-preview{display:flex;justify-content:space-between;border-top:1px solid var(--line);padding-top:12px}
 .invite-share{background:#eae8e0;padding:15px;margin-bottom:18px}
 .invite-share b{font-size:12px}
 .invite-share p{font-size:11px;color:var(--muted);margin:4px 0 10px}
@@ -1221,6 +1231,9 @@ input:focus,textarea:focus,select:focus{border-color:var(--blue);box-shadow:0 0 
   .calendar-agenda { min-height: 150px; }
 }
 @media (max-width: 600px) {
+  .invoice-line-row { grid-template-columns: minmax(0,1fr) 70px 35px; }
+  .invoice-line-row label:nth-of-type(3) { grid-column: 1 / 3; }
+  .invoice-line-remove { grid-column: 3; grid-row: 2; }
   .calendar-header-actions { width: 100%; }
   .calendar-header-actions .button { flex: 1; justify-content: center; }
   .calendar-toolbar { align-items: stretch; }

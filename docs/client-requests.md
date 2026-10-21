@@ -24,3 +24,10 @@ requests from **Start another project** in the portal. Each request creates a
 new shared project in the inquiry state and appears in **Studio → Requests**.
 The client can open its project card and message the studio while the studio
 reviews it; the studio can accept the request to move the project into planning.
+
+For existing clients, **Studio → Clients → Add a client** can create the client
+record, a shared first project, and a portal invitation in one onboarding
+flow. The studio shares the generated invitation link with the client; they
+must register using the matching email address. After signing in, they can
+message the studio on the shared project and access invoices shared to their
+portal.

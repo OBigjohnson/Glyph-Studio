@@ -762,6 +762,7 @@ function Clients() {
   const [saving, setSaving] = useState(false)
   const [deletingId, setDeletingId] = useState('')
   const [inviteLink, setInviteLink] = useState('')
+  const [inviteEmail, setInviteEmail] = useState('')
   useEffect(() => {
     if (!supabase || !workspace?.id) return
     supabase.from('clients').select('id, name, email, phone, company, notes, created_at').eq('workspace_id', workspace.id).order('created_at', { ascending: false })
@@ -769,19 +770,74 @@ function Clients() {
   }, [workspace?.id, setError])
   async function save(event) {
     event.preventDefault()
-    if (!supabase || !workspace) return
+    if (!supabase || !workspace || !user) return
     setSaving(true)
+    setInviteLink('')
+    setInviteEmail('')
     const form = Object.fromEntries(new FormData(event.currentTarget))
-    const result = await supabase.from('clients').insert({ workspace_id: workspace.id, name: String(form.name).trim(), email: form.email || null, phone: form.phone || null, company: form.company || null, notes: form.notes || '' }).select().single()
+    const email = String(form.email || '').trim().toLowerCase()
+    const projectName = String(form.project_name || '').trim()
+    if (form.invite_portal === 'on' && !email) {
+      setError('Add the client’s email address before creating a portal invitation.')
+      setSaving(false)
+      return
+    }
+    if (form.create_project === 'on' && !projectName) {
+      setError('Enter a project name to create the client’s first shared project.')
+      setSaving(false)
+      return
+    }
+    const result = await supabase.from('clients').insert({
+      workspace_id: workspace.id,
+      name: String(form.name).trim(),
+      email: email || null,
+      phone: String(form.phone || '').trim() || null,
+      company: String(form.company || '').trim() || null,
+      notes: String(form.notes || '').trim(),
+    }).select().single()
+    if (result.error) {
+      setError(result.error.message)
+      setSaving(false)
+      return
+    }
+    setItems((current) => [result.data, ...(current || [])])
+    const followUpErrors = []
+    if (form.create_project === 'on') {
+      const project = await supabase.from('projects').insert({
+        workspace_id: workspace.id,
+        client_id: result.data.id,
+        name: projectName,
+        service: String(form.project_service || ''),
+        brief: String(form.project_brief || '').trim(),
+        share_with_client: true,
+      })
+      if (project.error) followUpErrors.push(`The client was added, but the shared project could not be created: ${project.error.message}`)
+    }
+    if (form.invite_portal === 'on') {
+      const invitation = await supabase.from('invitations').insert({
+        workspace_id: workspace.id,
+        client_id: result.data.id,
+        email,
+        invited_by: user.id,
+      }).select('token').single()
+      if (invitation.error) followUpErrors.push(`The client was added, but the portal invitation could not be created: ${invitation.error.message}`)
+      else {
+        setInviteEmail(email)
+        setInviteLink(`${window.location.origin}${appPath('/portal')}?invite=${invitation.data.token}`)
+      }
+    }
     setSaving(false)
-    if (result.error) setError(result.error.message)
-    else { setItems((current) => [result.data, ...(current || [])]); setEditing(false) }
+    setEditing(false)
+    setError(followUpErrors.join(' '))
   }
   async function invite(client) {
     if (!supabase || !workspace || !user || !client.email) return
     const result = await supabase.from('invitations').insert({ workspace_id: workspace.id, client_id: client.id, email: client.email.toLowerCase(), invited_by: user.id }).select('token').single()
     if (result.error) setError(result.error.message)
-    else setInviteLink(`${window.location.origin}${appPath('/portal')}?invite=${result.data.token}`)
+    else {
+      setInviteEmail(client.email)
+      setInviteLink(`${window.location.origin}${appPath('/portal')}?invite=${result.data.token}`)
+    }
   }
   async function deleteClient(client) {
     if (!supabase || !workspace || !window.confirm(`Delete client "${client.name}"? Their portal access and invitations will be removed. Linked projects and invoices will remain, but will be unlinked from this client.`)) return
@@ -793,7 +849,7 @@ function Clients() {
     else if (!data?.length) setError('Client was not deleted. Refresh the page and check that you still have access to this workspace.')
     else setItems((current) => (current || []).filter((entry) => entry.id !== client.id))
   }
-  return <main className="studio-page"><StudioPageHeader kicker="PEOPLE / CLIENTS" title="The people<br />behind the work." action={<button className="button button-yellow" onClick={() => setEditing(true)} disabled={!workspace}><Plus size={16} /> Add a client</button>} />{error && <p className="notice-error">{error}</p>}{inviteLink && <div className="invite-share"><b>Client portal invitation</b><p>Send this private link to the matching client email:</p><input value={inviteLink} readOnly onFocus={(event) => event.target.select()} /></div>}{items === null ? <p className="loading-copy">Loading your clients…</p> : items.length ? <div className="record-list">{items.map((client) => <article className="record-row" key={client.id}><div className="record-avatar">{client.name.slice(0, 1).toUpperCase()}</div><div className="record-main"><b>{client.name}</b><span>{client.company || 'Independent client'}{client.email ? ` · ${client.email}` : ''}</span>{client.notes && <small>{client.notes}</small>}</div>{client.email && <button className="button button-soft" onClick={() => invite(client)}>Invite</button>}<Link className="quiet-link" to={`/studio/clients/${client.id}`}>Open <ArrowRight size={15} /></Link><button className="button button-danger" disabled={deletingId === client.id} onClick={() => deleteClient(client)} aria-label={`Delete ${client.name}`}>{deletingId === client.id ? 'Deleting…' : <><Trash2 size={15} /> Delete</>}</button></article>)}</div> : <EmptyRecord title="No client records yet" text="Create a client record to link together their projects, discussions, and invoices." onCreate={() => setEditing(true)} />}{editing && <Modal title="Add a client" onClose={() => setEditing(false)}><form onSubmit={save}><label>Client name<input name="name" required maxLength="160" /></label><div className="form-split"><label>Email<input name="email" type="email" maxLength="254" /></label><label>Phone<input name="phone" type="tel" maxLength="40" /></label></div><label>Company<input name="company" maxLength="160" /></label><label>Studio notes<textarea name="notes" rows="3" maxLength="5000" /></label><button className="button button-dark" disabled={saving}>{saving ? 'Saving…' : 'Save client'} <ArrowRight size={15} /></button></form></Modal>}</main>
+  return <main className="studio-page"><StudioPageHeader kicker="PEOPLE / CLIENTS" title="The people<br />behind the work." action={<button className="button button-yellow" onClick={() => setEditing(true)} disabled={!workspace}><Plus size={16} /> Add a client</button>} />{error && <p className="notice-error">{error}</p>}{inviteLink && <div className="invite-share"><b>Client portal invitation</b><p>Send this private link to {inviteEmail}. They can create an account with that email to access shared projects and invoices.</p><input value={inviteLink} readOnly onFocus={(event) => event.target.select()} /></div>}{items === null ? <p className="loading-copy">Loading your clients…</p> : items.length ? <div className="record-list">{items.map((client) => <article className="record-row" key={client.id}><div className="record-avatar">{client.name.slice(0, 1).toUpperCase()}</div><div className="record-main"><b>{client.name}</b><span>{client.company || 'Independent client'}{client.email ? ` · ${client.email}` : ''}</span>{client.notes && <small>{client.notes}</small>}</div>{client.email && <button className="button button-soft" onClick={() => invite(client)}>Invite</button>}<Link className="quiet-link" to={`/studio/clients/${client.id}`}>Open <ArrowRight size={15} /></Link><button className="button button-danger" disabled={deletingId === client.id} onClick={() => deleteClient(client)} aria-label={`Delete ${client.name}`}>{deletingId === client.id ? 'Deleting…' : <><Trash2 size={15} /> Delete</>}</button></article>)}</div> : <EmptyRecord title="No client records yet" text="Create a client record to link together their projects, discussions, and invoices." onCreate={() => setEditing(true)} />}{editing && <Modal title="Onboard a client" onClose={() => setEditing(false)}><form onSubmit={save}><label>Client name<input name="name" required maxLength="160" /></label><div className="form-split"><label>Email<input name="email" type="email" maxLength="254" /></label><label>Phone<input name="phone" type="tel" maxLength="40" /></label></div><label>Company<input name="company" maxLength="160" /></label><label>Studio notes<textarea name="notes" rows="3" maxLength="5000" /></label><section className="client-onboarding-options"><label className="check-label"><input name="invite_portal" type="checkbox" /> Create a client portal invitation</label><small>They can sign up using this email to access shared projects, conversations, and invoices.</small><label className="check-label"><input name="create_project" type="checkbox" /> Create and share their first project</label><label>Project name<input name="project_name" maxLength="180" placeholder="e.g. Brand identity refresh" /></label><label>Service<select name="project_service" defaultValue=""><option value="">Choose a service</option>{services.map((service) => <option key={service}>{service}</option>)}</select></label><label>Project brief<textarea name="project_brief" rows="3" maxLength="10000" placeholder="The goal, scope, and what success looks like…" /></label></section><button className="button button-dark" disabled={saving}>{saving ? 'Setting up…' : 'Save client'} <ArrowRight size={15} /></button></form></Modal>}</main>
 }
 
 function ClientDetail() {
@@ -1834,6 +1890,7 @@ function CalendarPost({ post, assets, copied, copiedAlt, onEdit, onDelete, onCop
 function Finance() {
   const { user, workspace, error, setError } = useStudioWorkspace()
   const [invoices, setInvoices] = useState([])
+  const [lineItems, setLineItems] = useState([{ description: '', quantity: '1', unit_amount: '' }])
   const [expenses, setExpenses] = useState([])
   const [clients, setClients] = useState([])
   const [projects, setProjects] = useState([])
@@ -1851,7 +1908,7 @@ function Finance() {
   useEffect(() => {
     if (!supabase || !workspace?.id) return
     Promise.all([
-      supabase.from('invoices').select('id, client_id, shared_with_client, number, amount, currency, status, due_date, created_at, clients(name, email, company), invoice_items(description, quantity, unit_amount), payments(id, amount, status, paid_at, receipts(id, receipt_number, issued_at))').eq('workspace_id', workspace.id).order('created_at', { ascending: false }),
+      supabase.from('invoices').select('id, client_id, shared_with_client, number, amount, currency, status, due_date, created_at, clients(name, email, company), invoice_items(id, description, quantity, unit_amount, sort_order), payments(id, amount, status, paid_at, receipts(id, receipt_number, issued_at))').eq('workspace_id', workspace.id).order('sort_order', { referencedTable: 'invoice_items', ascending: true }).order('created_at', { ascending: false }),
       supabase.from('expenses').select('id, description, category, amount, incurred_on').eq('workspace_id', workspace.id).order('incurred_on', { ascending: false }),
       supabase.from('clients').select('id, name').eq('workspace_id', workspace.id).order('name'),
       supabase.from('projects').select('id, name').eq('workspace_id', workspace.id).order('name'),
@@ -1871,9 +1928,23 @@ function Finance() {
     if (!supabase || !workspace) return
     setSaving(true)
     const form = Object.fromEntries(new FormData(event.currentTarget))
-    const amount = Number(form.amount)
+    const parsedItems = lineItems.map((item) => ({
+      description: item.description.trim(),
+      quantity: Number(item.quantity),
+      unit_amount: Number(item.unit_amount),
+    }))
+    if (!parsedItems.length || parsedItems.some((item) => (
+      !item.description || item.description.length > 500
+      || !Number.isFinite(item.quantity) || item.quantity <= 0
+      || !Number.isFinite(item.unit_amount) || item.unit_amount < 0
+    ))) {
+      setError('Add a description, positive quantity, and valid unit price for every line item.')
+      setSaving(false)
+      return
+    }
+    const amount = parsedItems.reduce((sum, item) => sum + Math.round(item.quantity * item.unit_amount * 100) / 100, 0)
     if (!Number.isFinite(amount) || amount <= 0) {
-      setError('Enter an invoice amount greater than zero.')
+      setError('The invoice total must be greater than zero.')
       setSaving(false)
       return
     }
@@ -1882,9 +1953,8 @@ function Finance() {
       target_client: form.client_id || null,
       target_project: form.project_id || null,
       invoice_number: String(form.number).trim(),
-      invoice_amount: amount,
       invoice_due_date: form.due_date || null,
-      item_description: String(form.description).trim(),
+      invoice_items: parsedItems,
     })
     if (result.error) {
       setError(result.error.message)
@@ -1903,11 +1973,19 @@ function Finance() {
         return
       }
     }
-    const invoice = await supabase.from('invoices').select('id, client_id, shared_with_client, number, amount, currency, status, due_date, created_at, clients(name, email, company), invoice_items(description, quantity, unit_amount), payments(id, amount, status, paid_at, receipts(id, receipt_number, issued_at))').eq('id', result.data).single()
+    const invoice = await supabase.from('invoices').select('id, client_id, shared_with_client, number, amount, currency, status, due_date, created_at, clients(name, email, company), invoice_items(id, description, quantity, unit_amount, sort_order), payments(id, amount, status, paid_at, receipts(id, receipt_number, issued_at))').eq('id', result.data).order('sort_order', { referencedTable: 'invoice_items', ascending: true }).single()
     setSaving(false)
     if (invoice.error) setError(invoice.error.message)
     else setInvoices((current) => [invoice.data, ...current])
+    setLineItems([{ description: '', quantity: '1', unit_amount: '' }])
     setInvoiceForm(false)
+  }
+  function openInvoiceForm() {
+    setLineItems([{ description: '', quantity: '1', unit_amount: '' }])
+    setInvoiceForm(true)
+  }
+  function updateLineItem(index, field, value) {
+    setLineItems((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: value } : item))
   }
   async function toggleInvoicePortal(invoice) {
     if (!supabase || !invoice.client_id) return
@@ -2061,18 +2139,18 @@ function Finance() {
   const totalExpenses = expenses.reduce((sum, expense) => sum + Number(expense.amount), 0)
   const receipts = invoices.flatMap((invoice) => asRows(invoice.payments).flatMap((payment) => asRows(payment.receipts).filter((receipt) => receipt?.receipt_number).map((receipt) => ({ receipt, payment, invoice }))))
   return <main className="studio-page">
-    <StudioPageHeader kicker="THE BUSINESS / FINANCE" title="Keep the<br />numbers clear." action={<div className="finance-actions"><button className="button button-soft" onClick={() => setExpenseForm(true)}><Plus size={15} /> Expense</button><button className="button button-yellow" disabled={!workspace} onClick={() => setInvoiceForm(true)}><Plus size={16} /> Create invoice</button></div>} />
+    <StudioPageHeader kicker="THE BUSINESS / FINANCE" title="Keep the<br />numbers clear." action={<div className="finance-actions"><button className="button button-soft" onClick={() => setExpenseForm(true)}><Plus size={15} /> Expense</button><button className="button button-yellow" disabled={!workspace} onClick={openInvoiceForm}><Plus size={16} /> Create invoice</button></div>} />
     {error && <p className="notice-error">{error}</p>}
     {receiptShareMessage && <p className="notice-success">{receiptShareMessage}</p>}
     <div className="finance-note"><LockKeyhole size={18} /><div><b>Manual bank transfer is enabled.</b><span>Share the invoice with the client and record a payment after you verify the transfer. A receipt is generated inside the app and added to the income total.</span></div></div>
     <div className="dashboard-stats finance-stats"><div><span>INCOME</span><b>{money(totalPaid)}</b></div><div><span>RECORDED EXPENSES</span><b>{money(totalExpenses)}</b></div><div><span>NET (RECORDED)</span><b>{money(totalPaid - totalExpenses)}</b></div></div>
     <div className="studio-section-heading"><div><p className="kicker">STUDIO RECORDS</p><h2>Invoices</h2></div></div>
-    {invoices.length ? <div className="record-list">{invoices.map((invoice) => <div className="record-row" key={invoice.id}><FileText /><div className="record-main"><b>#{invoice.number} · {invoice.clients?.name || 'Client not linked'}</b><span>{money(Number(invoice.amount))} · {invoice.status}</span>{asRows(invoice.payments).flatMap((payment) => asRows(payment.receipts)).filter((receipt) => receipt?.receipt_number).map((receipt) => <small key={receipt.receipt_number}>Verified receipt: {receipt.receipt_number}</small>)}</div><span className="muted-copy">{invoice.due_date || 'No due date'}</span><button className="button button-soft" onClick={() => setPrintInvoice(invoice)}>Print invoice</button><button className="button button-soft" onClick={() => setManualPaymentInvoice(invoice)}>Record payment</button><button className="button button-soft" disabled={!invoice.client_id || sharingInvoiceId === invoice.id} onClick={() => toggleInvoicePortal(invoice)}>{sharingInvoiceId === invoice.id ? 'Updating…' : invoice.shared_with_client ? 'Remove portal access' : invoice.client_id ? 'Share to client portal' : 'Link a client first'}</button><button className="button button-danger" disabled={deletingInvoiceId === invoice.id} onClick={() => deleteInvoice(invoice)} aria-label={`Delete invoice ${invoice.number}`}>{deletingInvoiceId === invoice.id ? 'Deleting…' : <><Trash2 size={15} /> Delete</>}</button></div>)}</div> : <div className="studio-empty"><FileText /><h3>No invoices yet.</h3><p>Create a draft invoice for a client or project. Once a transfer is verified, record the payment to generate a receipt and move the income into the ledger.</p><button className="button button-dark" onClick={() => setInvoiceForm(true)}><Plus size={15} /> Create invoice</button></div>}
+    {invoices.length ? <div className="record-list">{invoices.map((invoice) => <div className="record-row" key={invoice.id}><FileText /><div className="record-main"><b>#{invoice.number} · {invoice.clients?.name || 'Client not linked'}</b><span>{money(Number(invoice.amount))} · {invoice.status}</span>{asRows(invoice.payments).flatMap((payment) => asRows(payment.receipts)).filter((receipt) => receipt?.receipt_number).map((receipt) => <small key={receipt.receipt_number}>Verified receipt: {receipt.receipt_number}</small>)}</div><span className="muted-copy">{invoice.due_date || 'No due date'}</span><button className="button button-soft" onClick={() => setPrintInvoice(invoice)}>Print invoice</button><button className="button button-soft" onClick={() => setManualPaymentInvoice(invoice)}>Record payment</button><button className="button button-soft" disabled={!invoice.client_id || sharingInvoiceId === invoice.id} onClick={() => toggleInvoicePortal(invoice)}>{sharingInvoiceId === invoice.id ? 'Updating…' : invoice.shared_with_client ? 'Remove portal access' : invoice.client_id ? 'Share to client portal' : 'Link a client first'}</button><button className="button button-danger" disabled={deletingInvoiceId === invoice.id} onClick={() => deleteInvoice(invoice)} aria-label={`Delete invoice ${invoice.number}`}>{deletingInvoiceId === invoice.id ? 'Deleting…' : <><Trash2 size={15} /> Delete</>}</button></div>)}</div> : <div className="studio-empty"><FileText /><h3>No invoices yet.</h3><p>Create a draft invoice for a client or project. Once a transfer is verified, record the payment to generate a receipt and move the income into the ledger.</p><button className="button button-dark" onClick={openInvoiceForm}><Plus size={15} /> Create invoice</button></div>}
     <div className="studio-section-heading"><div><p className="kicker">PAYMENT RECORDS</p><h2>Receipts</h2></div></div>
     {receipts.length ? <div className="record-list">{receipts.map(({ receipt, payment, invoice }) => <article className="record-row" key={receipt.receipt_number}><FileText /><div className="record-main"><b>{receipt.receipt_number} · {invoice.clients?.name || 'Client not linked'}</b><span>Invoice #{invoice.number} · {money(Number(payment.amount))} · {payment.paid_at ? new Date(payment.paid_at).toLocaleDateString() : new Date(receipt.issued_at).toLocaleDateString()}</span><small>{invoice.shared_with_client ? 'Client copy available in portal' : 'Client copy not shared yet'}</small></div><button className="button button-soft" onClick={() => setPrintInvoice({ ...invoice, receipt: { ...receipt, payment } })}>Print studio receipt</button><button className="button button-soft" onClick={() => setPrintInvoice({ ...invoice, receipt: { ...receipt, payment }, receiptAudience: 'client' })}>Print client copy</button><button className="button button-soft" disabled={!invoice.client_id || sharingReceiptId === receipt.receipt_number} onClick={() => shareReceipt(invoice, receipt)}>{sharingReceiptId === receipt.receipt_number ? 'Preparing…' : 'Copy client receipt link'}</button><button className="button button-danger" disabled={!receipt.id || deletingReceiptId === receipt.id} onClick={() => deleteReceipt(invoice, payment, receipt)} aria-label={`Delete receipt ${receipt.receipt_number}`}>{deletingReceiptId === receipt.id ? 'Deleting…' : <><Trash2 size={15} /> Delete</>}</button></article>)}</div> : <p className="empty-copy">Receipts generated from verified payments will be stored here.</p>}
     <div className="studio-section-heading"><div><p className="kicker">BUSINESS COSTS</p><h2>Expenses</h2></div></div>
     {expenses.length ? <div className="record-list">{expenses.map((expense) => <div className="record-row" key={expense.id}><span className="project-index index-2"><FileText size={17} /></span><div className="record-main"><b>{expense.description}</b><span>{expense.category} · {expense.incurred_on}</span></div><b>{money(Number(expense.amount))}</b><button className="button button-danger" disabled={deletingExpenseId === expense.id} onClick={() => deleteExpense(expense)} aria-label={`Delete expense ${expense.description}`}>{deletingExpenseId === expense.id ? 'Deleting…' : <><Trash2 size={15} /> Delete</>}</button></div>)}</div> : <p className="empty-copy">Record business costs to calculate net income from real records.</p>}
-    {invoiceForm && <Modal title="Create an invoice" onClose={() => setInvoiceForm(false)}><form onSubmit={createInvoice}><label>Invoice number<input name="number" required maxLength="80" placeholder="e.g. GL-001" /></label><label>Client<select name="client_id" defaultValue=""><option value="">No client linked</option>{clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label><label>Project<select name="project_id" defaultValue=""><option value="">No project linked</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label><label>Line item<input name="description" required maxLength="500" placeholder="Brand identity design" /></label><label>Amount (NGN)<input name="amount" type="number" required min="0.01" step="0.01" /></label><label>Due date<input name="due_date" type="date" /></label><p className="muted-copy">The invoice is recorded as open and can be shared to the client portal. Payment is tracked manually after verification.</p><button className="button button-dark" disabled={saving}>{saving ? 'Saving…' : 'Create invoice'} <ArrowRight size={15} /></button></form></Modal>}
+    {invoiceForm && <Modal title="Create an invoice" onClose={() => setInvoiceForm(false)}><form onSubmit={createInvoice}><label>Invoice number<input name="number" required maxLength="80" placeholder="e.g. GL-001" /></label><label>Client<select name="client_id" defaultValue=""><option value="">No client linked</option>{clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label><label>Project<select name="project_id" defaultValue=""><option value="">No project linked</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label><div className="invoice-line-items"><div className="invoice-line-items-heading"><b>Line items</b><button className="button button-soft" type="button" onClick={() => setLineItems((current) => [...current, { description: '', quantity: '1', unit_amount: '' }])}><Plus size={14} /> Add item</button></div>{lineItems.map((item, index) => <div className="invoice-line-row" key={index}><label>Description<input value={item.description} onChange={(event) => updateLineItem(index, 'description', event.target.value)} maxLength="500" placeholder="Brand identity design" required /></label><label>Qty<input type="number" value={item.quantity} onChange={(event) => updateLineItem(index, 'quantity', event.target.value)} min="0.01" step="0.01" required /></label><label>Unit price<input type="number" value={item.unit_amount} onChange={(event) => updateLineItem(index, 'unit_amount', event.target.value)} min="0" step="0.01" required /></label>{lineItems.length > 1 && <button className="icon-button invoice-line-remove" type="button" aria-label={`Remove line item ${index + 1}`} onClick={() => setLineItems((current) => current.filter((_, itemIndex) => itemIndex !== index))}><X size={15} /></button>}</div>)}    <div className="invoice-total-preview"><span>Invoice total</span><b>{money(lineItems.reduce((sum, item) => sum + Math.round((Number(item.quantity) || 0) * (Number(item.unit_amount) || 0) * 100) / 100, 0))}</b></div></div><label>Due date<input name="due_date" type="date" /></label><p className="muted-copy">Invoices linked to a client are shared to their portal automatically. Payment is made by bank transfer and tracked after verification.</p><button className="button button-dark" disabled={saving}>{saving ? 'Saving…' : 'Create invoice'} <ArrowRight size={15} /></button></form></Modal>}
     {manualPaymentInvoice && <Modal title={`Confirm payment for invoice ${manualPaymentInvoice.number}`} onClose={() => setManualPaymentInvoice(null)}><form onSubmit={recordManualPayment}><label>Amount received<input name="amount" type="number" required min="0.01" step="0.01" defaultValue={manualPaymentInvoice.amount} /></label><label>Bank transfer reference<input name="reference" placeholder="Optional transaction reference" maxLength="120" /></label><label>Payment date<input name="paid_on" type="date" defaultValue={new Date().toISOString().slice(0, 10)} /></label><label>Notes<textarea name="note" rows="3" placeholder="Bank transfer confirmation, account holder, or any matching details." maxLength="500" /></label><p className="muted-copy">This records a successful manual bank transfer and generates a receipt that can be printed and shared with the client.</p><button className="button button-dark" disabled={saving}>{saving ? 'Saving…' : 'Record payment'} <Check size={15} /></button></form></Modal>}
     {expenseForm && <Modal title="Record an expense" onClose={() => setExpenseForm(false)}><form onSubmit={createExpense}><label>Description<input name="description" required maxLength="240" /></label><label>Category<select name="category"><option value="other">Other</option><option value="production">Production</option><option value="software">Software</option><option value="equipment">Equipment</option><option value="travel">Travel</option><option value="contractor">Contractor</option></select></label><label>Project<select name="project_id" defaultValue=""><option value="">Studio-wide</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label><label>Amount (NGN)<input name="amount" required type="number" min="0.01" step="0.01" /></label><label>Date<input name="incurred_on" required type="date" defaultValue={new Date().toISOString().slice(0, 10)} /></label><button className="button button-dark" disabled={saving}>{saving ? 'Saving…' : 'Save expense'} <ArrowRight size={15} /></button></form></Modal>}
     {printInvoice && <PrintableInvoice invoice={printInvoice} studioName={workspace?.studio_name || 'GLYPH Creative Studio'} studioEmail={workspace?.contact_email || ''} onClose={() => setPrintInvoice(null)} />}
@@ -2204,7 +2282,7 @@ function ClientPortal() {
       }
       const [projectResult, invoiceResult] = await Promise.all([
         supabase.from('projects').select('id, name, service, status, brief, due_date, workspace_id, client_id, clients(name)').in('client_id', clientIds).eq('share_with_client', true).order('updated_at', { ascending: false }),
-        supabase.from('invoices').select('id, workspace_id, client_id, shared_with_client, number, amount, currency, status, due_date, created_at, clients(name, company, email), invoice_items(description, quantity, unit_amount), payments(id, amount, status, paid_at, receipts(receipt_number, issued_at))').in('client_id', clientIds).eq('shared_with_client', true).order('created_at', { ascending: false }),
+        supabase.from('invoices').select('id, workspace_id, client_id, shared_with_client, number, amount, currency, status, due_date, created_at, clients(name, company, email), invoice_items(id, description, quantity, unit_amount, sort_order), payments(id, amount, status, paid_at, receipts(receipt_number, issued_at))').in('client_id', clientIds).eq('shared_with_client', true).order('sort_order', { referencedTable: 'invoice_items', ascending: true }).order('created_at', { ascending: false }),
       ])
       if (projectResult.error) setError(projectResult.error.message)
       if (invoiceResult.error) setError(invoiceResult.error.message)
@@ -2299,6 +2377,7 @@ function ClientPortal() {
           <div className="record-main">
             <b>Invoice #{invoice.number}</b>
             <span>{money(Number(invoice.amount))} · {invoice.status}</span>
+            {asRows(invoice.invoice_items).map((item) => <small key={item.id || `${item.description}-${item.sort_order}`}>{item.description} · {Number(item.quantity)} × {money(Number(item.unit_amount))} = {money(Number(item.quantity) * Number(item.unit_amount))}</small>)}
             {receiptRows.map((receipt) => <small key={receipt.receipt_number}>Receipt {receipt.receipt_number} · {new Date(receipt.issued_at).toLocaleDateString()}</small>)}
           </div>
           <button className="button button-soft" onClick={() => setPrintInvoice(invoice)}>Print invoice</button>
