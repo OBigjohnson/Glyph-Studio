@@ -2,12 +2,20 @@
 
 GLYPH supports hosted Bachs checkout alongside the existing verified manual
 bank-transfer flow. Invoice amounts and currencies come from Supabase, not the
-browser. A client can pay 25%, 50%, 75%, or the remaining balance; each option
-is capped at the amount still due. Payments are recorded only after the server
-verifies a signed Bachs `collection.succeeded` webhook and checks the paid
-amount and currency against the checkout session. Checkout is pinned to the
-invoice currency so Bachs currency conversion cannot cause a valid payment to
-be mistaken for a mismatched amount.
+browser. A client can pay 25%, 50%, or 75% of the original invoice, capped at
+the amount still due, or pay 100% of the remaining balance. Payments are
+recorded only after the server verifies a signed Bachs
+`collection.succeeded` webhook and checks the paid amount and currency against
+the checkout session. Checkout is pinned to the invoice currency so Bachs
+currency conversion cannot cause a valid payment to be mistaken for a
+mismatched amount.
+
+To pass Bachs' payment-processing fee to the payer, set the Bachs account's
+checkout `fee_preference` to `customer_pays`. Bachs adds its processing fee to
+the amount the payer pays, so the studio settles the invoice amount before
+processing fees. This is separate from Bachs withdrawal fees, which are still
+charged when moving funds from the Bachs balance to a bank, wallet, or other
+destination. GLYPH does not add a separate fixed NGN 100 surcharge.
 
 ## Studio workflow
 
@@ -48,6 +56,10 @@ and the same URL remains the client's receipt page afterward.
   The webhook rejects events from a different organization. The key owner is
   the merchant account that receives the payment; its verified business name
   and payout destination must be configured in Bachs, not in GLYPH.
+- The Bachs account checkout setting `fee_preference` supports `customer_pays`
+  and `org_pays`. Choose `customer_pays` in the Bachs account's checkout
+  settings to pass its processing fee through; this does not cover withdrawal
+  fees.
 - The Bachs webhook destination URL includes Supabase's browser-safe
   publishable/anon key as an `apikey` query parameter for gateway access.
   Webhook authenticity is still established only by the Bachs signature;

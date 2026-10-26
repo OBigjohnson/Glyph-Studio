@@ -2393,7 +2393,7 @@ function PublicInvoiceCheckout() {
                 <option value="25">25% deposit · {money(Math.min(Number(invoice.amount) * 0.25, Number(invoice.amount_remaining)))}</option>
                 <option value="50">50% deposit · {money(Math.min(Number(invoice.amount) * 0.5, Number(invoice.amount_remaining)))}</option>
                 <option value="75">75% deposit · {money(Math.min(Number(invoice.amount) * 0.75, Number(invoice.amount_remaining)))}</option>
-                <option value="100">Remaining balance · {money(Number(invoice.amount_remaining))}</option>
+                <option value="100">100% · Remaining balance · {money(Number(invoice.amount_remaining))}</option>
               </select></label>
               <p className="muted-copy">Deposit percentages are based on the original invoice and capped at the remaining balance. Each confirmed payment generates a receipt showing this payment, the total paid so far, and the balance still due.</p>
               <button className="button button-yellow" disabled={paying || checkingPayment}>{paying ? 'Opening secure checkout…' : `Pay ${money(amount)} with Bachs`} <ArrowRight size={15} /></button>

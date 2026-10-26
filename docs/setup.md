@@ -145,6 +145,14 @@ Bachs checkout links are public bearer links for a specific invoice. Send them
 only to the intended payer. Receipts are available on the same link after
 payment; GLYPH does not email receipts.
 
+To have the payer cover Bachs' processing fee, set the Bachs account checkout
+fee preference to `customer_pays` in the Bachs dashboard before sharing live
+checkout links. The Bachs API also exposes this account setting through
+`PUT /v1/accounts/checkout/settings` with `{"fee_preference":"customer_pays"}`;
+it may require account-settings write permission. This preference passes
+through checkout processing fees, not separate payout/withdrawal fees. GLYPH
+does not add a separate fixed NGN 100 surcharge.
+
 The baseline creates workspaces, client records and invitations, projects,
 tasks, notes, links, messages, portfolio items, inquiries, invoices, expenses,
 payments, receipts, activity, and the private portfolio-media bucket, with
