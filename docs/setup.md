@@ -1,4 +1,4 @@
-# GLYPH Studio setup
+gh -# GLYPH Studio setup
 
 ## Supabase
 
@@ -41,38 +41,109 @@ npm install
 npm run dev
 ```
 
-## Deploying the combined app with GitHub Pages
+## Deploying the combined app with Vercel
 
 The public portfolio, client portal, and studio workspace deploy together as
-one site. GitHub Pages hosts only the frontend; Supabase continues to provide
+one site. Vercel hosts the frontend; Supabase continues to provide
 authentication, database, and file storage.
 
-1. Push this project to a GitHub repository on the `main` branch. The
-`.github/workflows/deploy.yml` workflow runs lint and build, then deploys the
-site whenever `main` is updated.
-2. In the repository, open **Settings → Pages** and set **Build and
-deployment → Source** to **GitHub Actions**.
-3. Add repository Actions secrets named `VITE_SUPABASE_URL` and
-`VITE_SUPABASE_ANON_KEY`, with the Supabase Project URL and browser-safe anon
-public key. Never use a Supabase `service_role` key in this frontend or in
-these secrets.
-4. Run the workflow from **Actions → Deploy GLYPH Studio to GitHub Pages →
-Run workflow**, or push a commit to `main`. The workflow publishes the
-portfolio, portal, and studio app at the same Pages address. For a repository
-named `owner.github.io`, the address is the domain root; for any other
-repository it includes the repository name in the path.
-5. In Supabase **Authentication → URL Configuration**, set **Site URL** to
-the deployed site URL and add that same URL plus `/**` to the allowed redirect
-URLs. For example, a project site at `https://owner.github.io/glyph-studio/`
-needs `https://owner.github.io/glyph-studio/**`. The build sets
-`VITE_SITE_URL` to the Pages URL so email confirmation and password-reset links
-return to the deployed app.
+1. Import this GitHub repository in Vercel and use the Vite framework preset.
+The project defaults to `npm run build` and `dist` as the output directory.
+2. In the Vercel project, open **Settings → Environment Variables** and add
+`VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` for Production, Preview, and
+Development as needed. Use the Supabase Project URL and browser-safe anon
+public key. Never add a Supabase `service_role` key to this frontend or to
+Vercel.
+3. Redeploy after adding or changing environment variables. Vite embeds these
+values at build time; they are not runtime server secrets.
+4. In Supabase **Authentication → URL Configuration**, set **Site URL** to the
+production Vercel URL and add it plus `/**` to the allowed redirect URLs. Add
+the Vercel preview URL pattern if authentication should work on preview
+deployments. Email confirmation and password-reset links return to
+`/sign-in`.
 
-The Vite build uses the repository path as its base URL, configures React
-Router with that base, and emits a `404.html` SPA fallback. This lets direct
-links and refreshes work for routes such as `/portfolio`, `/portal`, and
-`/studio/finance`. `.env.local` and other `.env` files are ignored by Git so
-local credentials are not committed.
+`vercel.json` rewrites application routes to the SPA entry point so direct
+links and refreshes work for paths such as `/portfolio`, `/portal`, and
+`/studio/finance` and `/pay/<invoice-token>`. `.env.local`, other `.env` files,
+and Vercel's local project link are ignored by Git so credentials and local
+configuration are not committed.
+
+## Bachs invoice checkout
+
+The Bachs integration uses Supabase Edge Functions; the secret key and webhook
+signing secret never go in frontend environment variables.
+
+1. Create and verify a **Bachs merchant account for the studio** at
+   [app.bachs.io/signup](https://app.bachs.io/signup). Complete Bachs' live
+   business verification and add the studio's payout destination in Bachs.
+   Set the merchant/business name there to the studio's customer-facing or
+   registered business name. GLYPH does not create a Bachs account or control
+   the merchant name shown on Bachs-hosted checkout; the Bachs account that
+   owns the API key receives the payments into its Bachs balance.
+
+2. Apply both checkout migrations with the Supabase CLI:
+
+   ```bash
+   supabase db push
+   ```
+
+3. In that same Bachs account, create a production API key with the
+   `payments:write` scope. In Supabase **Project Settings → API Keys**, copy
+   the browser-safe **publishable** key (or legacy `anon` key); never use the
+   `service_role` or secret key here. Supabase's function gateway requires an
+   API key even when JWT verification is disabled, so include this public key
+   as the `apikey` query parameter in the Bachs webhook destination:
+
+   ```text
+   https://<project-ref>.supabase.co/functions/v1/bachs-webhook?apikey=<SUPABASE_PUBLISHABLE_OR_ANON_KEY>
+   ```
+
+   Configure this destination under the production account and subscribe to
+   `collection.succeeded`. Keep the production key, webhook signing secret,
+   and account's `organization_id` available for the next step. The publishable
+   key is intended for public clients; do not put a service-role key in the URL.
+
+4. Add the Bachs **live** credentials and public deployed app URL as Supabase
+   Function secrets:
+
+   ```bash
+   supabase secrets set BACHS_MODE=live BACHS_API_KEY=sk_live_your_key BACHS_WEBHOOK_SECRET=your_live_signing_secret BACHS_ORGANIZATION_ID=acct_your_organization_id PUBLIC_APP_URL=https://your-site.example
+   ```
+
+   `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are provided to deployed
+   Supabase Edge Functions. Do not add the service-role key to `.env.local` or
+   any `VITE_*` variable. The mode must match the key prefix. The webhook also
+   checks the event's Bachs `organization_id` against the configured account
+   before recording a payment.
+
+5. Deploy the checkout and webhook functions:
+
+   ```bash
+   supabase functions deploy bachs-checkout
+   supabase functions deploy bachs-webhook
+   ```
+
+6. Before accepting a real client payment, test the complete flow against
+   Bachs sandbox using a separate Supabase project or set of function secrets:
+
+   ```bash
+   supabase secrets set BACHS_MODE=sandbox BACHS_API_KEY=sk_sandbox_your_key BACHS_WEBHOOK_SECRET=your_sandbox_signing_secret BACHS_ORGANIZATION_ID=acct_your_sandbox_organization_id PUBLIC_APP_URL=https://your-site.example
+   ```
+
+   Confirm the checkout returns in the invoice currency, a signed webhook
+   records the payment once, receipts show the correct balance, and Finance
+   and the client portal update. Do not switch the production project's secrets
+   to sandbox for testing; checkout reservations are isolated by mode, but
+   production should remain configured with live credentials.
+
+7. Verify the first real low-value payment in Bachs and GLYPH: check the
+   merchant name and payout account in Bachs, confirm the payment appears in
+   the studio's Bachs balance, and confirm GLYPH creates one receipt only
+   after the signed production webhook arrives.
+
+Bachs checkout links are public bearer links for a specific invoice. Send them
+only to the intended payer. Receipts are available on the same link after
+payment; GLYPH does not email receipts.
 
 The baseline creates workspaces, client records and invitations, projects,
 tasks, notes, links, messages, portfolio items, inquiries, invoices, expenses,
@@ -103,10 +174,10 @@ client's portal from Finance. Clients can print invoices shared with their
 portal account. Receipts are printable by both sides only after a verified
 payment has issued one.
 
-KoraPay checkout, verified webhooks, receipt issuance, social OAuth and
-scheduling, outbound email, community features, and AI responses are not
-implemented or configured. The UI labels these as unavailable rather than
-simulating success. See `payments.md` and `integrations.md` for the intended
-server-side boundaries. See `portfolio.md` to import and publish your artwork
-and `costs.md` for the current free/low-cost provider limits, exact known
-prices, and account setup checklist.
+Bachs checkout, signed webhook verification, and receipt issuance are
+implemented, but require the migration, Edge Function secrets, and webhook
+destination above. Social OAuth and scheduling, outbound email, community
+features, and AI responses are not implemented. See `payments.md` and
+`integrations.md` for the server-side boundaries. See `portfolio.md` to import
+and publish your artwork and `costs.md` for the current free/low-cost provider
+limits, known prices, and account setup checklist.

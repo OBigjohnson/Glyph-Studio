@@ -1,9 +1,26 @@
 # GLYPH integrations roadmap
 
-External integrations are not connected. Do not show an account as connected,
-send email, publish content, or report automation success until a trusted
-server has verified the provider response. `service_role` keys, OAuth tokens,
-and provider secrets must never be placed in `VITE_*` variables.
+Bachs checkout is implemented behind Supabase Edge Functions and becomes
+available after the deployment steps in `setup.md` are completed. The studio
+must create and verify its own Bachs merchant account, set the merchant name
+and payout destination in Bachs, and use that account's production credentials.
+GLYPH does not create Bachs accounts or set their legal/merchant identity.
+Other external integrations are not connected. Do not show an account as
+connected, send email, publish content, or report automation success until a
+trusted server has verified the provider response. `service_role` keys, OAuth
+tokens, and provider secrets must never be placed in `VITE_*` variables.
+
+## Bachs invoice payments
+
+The studio can share a public checkout link for each invoice. The client
+chooses a 25%, 50%, 75%, or remaining-balance payment and is redirected to
+Bachs-hosted checkout for the server-calculated amount. Supabase Edge
+Functions create the checkout and accept only signed `collection.succeeded`
+webhooks that match its stored amount and currency. Checkout uses the invoice
+currency, and sandbox/live reservations are isolated. Verified payments
+produce receipts for the studio and payer and update the invoice; redirects
+alone do not mark an invoice as paid. Receipt copies are available in GLYPH but
+are not emailed. Manual verified bank transfers remain supported.
 
 ## Social content calendar
 

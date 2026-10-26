@@ -13,7 +13,7 @@ and provider eligibility can change the final cost.
 | Imported portfolio files | Keep files in the existing private Supabase bucket | The imported 169 files use about 328.5 MiB, leaving about 695.5 MiB of the Free storage allowance before other stored files. A complete download of all work is about 328.5 MiB; repeated downloads count toward bandwidth. Keep every file private until its portfolio story is explicitly published. |
 | Custom web address | Optional domain registration | Not included in free hosting. Price depends on the chosen name, registrar, and top-level domain; renewals may differ from introductory prices. |
 | Account and password emails | Resend Free over custom SMTP | $0 for up to 3,000 emails/month and 100/day. Requires a sending domain and DNS verification. Supabase's built-in email service is not a substitute for production SMTP: it is limited to 2 messages/hour and project-team recipients. |
-| Payment checkout | KoraPay merchant account | Requires merchant verification. Confirm the current Nigerian fees for each payment method and settlement with KoraPay; the public developer pages do not establish a reliable current merchant fee or monthly cost. Expect provider transaction fees; do not budget an invented rate. |
+| Payment checkout | Bachs merchant account | Requires merchant verification. Confirm current payment-method fees and settlement with Bachs; the public developer pages do not establish a reliable current merchant fee or monthly cost. Expect provider transaction fees; do not budget an invented rate. |
 | Public inquiry assistant | Begin with a no-AI approved FAQ, or use a metered model with a hard budget | An example using OpenAI GPT-5 nano pricing of $0.05/1M input tokens and $0.40/1M output tokens is about $0.17 for 1,000 inquiries at 1,000 input and 300 output tokens each. Actual usage varies. Gemini offers selected free quotas, but Google states free-tier data may be used to improve its products. Do not send confidential client/project data to a free public-model tier. |
 
 ### Portfolio hosting caveat
@@ -62,8 +62,8 @@ scheduled jobs only after each network passes its own authorization and test.
   promoting the full portfolio to public traffic.
 - Resend account and a domain whose DNS records you can edit for email
   authentication.
-- Verified KoraPay merchant account, payout details, test/live credentials, and
-  KoraPay's exact fee and settlement schedule. Put credentials in a trusted
+- Verified Bachs merchant account, payout details, test/live credentials, and
+  Bachs' exact fee and settlement schedule. Put credentials in a trusted
   server/Edge Function secret store, never in browser code or chat.
 - Optional AI provider account and an explicit spend cap; provide only
   approved public service and pricing information to the assistant.
@@ -79,9 +79,9 @@ scheduled jobs only after each network passes its own authorization and test.
 - [Supabase billing and quotas](https://supabase.com/docs/guides/platform/billing-on-supabase)
 - [Supabase storage bandwidth](https://supabase.com/docs/guides/storage/serving/bandwidth)
 - [Supabase Auth SMTP](https://supabase.com/docs/guides/auth/auth-smtp)
-- [KoraPay accept payments](https://developers.korapay.com/docs/accept-payments.md)
-- [KoraPay checkout](https://developers.korapay.com/docs/checkout-standard.md)
-- [KoraPay merchant signup](https://merchant.korapay.com/auth/signup)
+- [Bachs documentation](https://docs.bachs.io/introduction)
+- [Bachs hosted checkout](https://docs.bachs.io/guides/checkout/checkout-sessions)
+- [Bachs merchant signup](https://app.bachs.io/signup)
 - [Resend pricing](https://resend.com/pricing)
 - [Resend domain setup](https://resend.com/docs/dashboard/domains/introduction)
 - [OpenAI API pricing](https://developers.openai.com/api/docs/pricing)

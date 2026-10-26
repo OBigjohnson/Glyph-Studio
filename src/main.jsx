@@ -1903,12 +1903,12 @@ function Finance() {
   const [deletingInvoiceId, setDeletingInvoiceId] = useState('')
   const [deletingReceiptId, setDeletingReceiptId] = useState('')
   const [deletingExpenseId, setDeletingExpenseId] = useState('')
-  const [receiptShareMessage, setReceiptShareMessage] = useState('')
+  const [financeShareMessage, setFinanceShareMessage] = useState('')
   const [printInvoice, setPrintInvoice] = useState(null)
   useEffect(() => {
     if (!supabase || !workspace?.id) return
     Promise.all([
-      supabase.from('invoices').select('id, client_id, shared_with_client, number, amount, currency, status, due_date, created_at, clients(name, email, company), invoice_items(id, description, quantity, unit_amount, sort_order), payments(id, amount, status, paid_at, receipts(id, receipt_number, issued_at))').eq('workspace_id', workspace.id).order('sort_order', { referencedTable: 'invoice_items', ascending: true }).order('created_at', { ascending: false }),
+      supabase.from('invoices').select('id, client_id, checkout_token, shared_with_client, number, amount, currency, status, due_date, created_at, clients(name, email, company), invoice_items(id, description, quantity, unit_amount, sort_order), payments(id, amount, status, paid_at, receipts(id, receipt_number, issued_at))').eq('workspace_id', workspace.id).order('sort_order', { referencedTable: 'invoice_items', ascending: true }).order('created_at', { ascending: false }),
       supabase.from('expenses').select('id, description, category, amount, incurred_on').eq('workspace_id', workspace.id).order('incurred_on', { ascending: false }),
       supabase.from('clients').select('id, name').eq('workspace_id', workspace.id).order('name'),
       supabase.from('projects').select('id, name').eq('workspace_id', workspace.id).order('name'),
@@ -1922,6 +1922,32 @@ function Finance() {
       setClients(clientResult.data || [])
       setProjects(projectResult.data || [])
     })
+  }, [workspace?.id, setError])
+  useEffect(() => {
+    if (!supabase || !workspace?.id) return undefined
+    const refreshInvoices = async () => {
+      const { data, error: invoiceError } = await supabase.from('invoices')
+        .select('id, client_id, checkout_token, shared_with_client, number, amount, currency, status, due_date, created_at, clients(name, email, company), invoice_items(id, description, quantity, unit_amount, sort_order), payments(id, amount, status, paid_at, receipts(id, receipt_number, issued_at))')
+        .eq('workspace_id', workspace.id)
+        .order('sort_order', { referencedTable: 'invoice_items', ascending: true })
+        .order('created_at', { ascending: false })
+      if (invoiceError) setError(invoiceError.message)
+      else setInvoices(data || [])
+    }
+    const channel = supabase.channel(`finance-payments:${workspace.id}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'invoices',
+        filter: `workspace_id=eq.${workspace.id}`,
+      }, refreshInvoices)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'payments',
+      }, refreshInvoices)
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
   }, [workspace?.id, setError])
   async function createInvoice(event) {
     event.preventDefault()
@@ -1973,7 +1999,7 @@ function Finance() {
         return
       }
     }
-    const invoice = await supabase.from('invoices').select('id, client_id, shared_with_client, number, amount, currency, status, due_date, created_at, clients(name, email, company), invoice_items(id, description, quantity, unit_amount, sort_order), payments(id, amount, status, paid_at, receipts(id, receipt_number, issued_at))').eq('id', result.data).order('sort_order', { referencedTable: 'invoice_items', ascending: true }).single()
+    const invoice = await supabase.from('invoices').select('id, client_id, checkout_token, shared_with_client, number, amount, currency, status, due_date, created_at, clients(name, email, company), invoice_items(id, description, quantity, unit_amount, sort_order), payments(id, amount, status, paid_at, receipts(id, receipt_number, issued_at))').eq('id', result.data).order('sort_order', { referencedTable: 'invoice_items', ascending: true }).single()
     setSaving(false)
     if (invoice.error) setError(invoice.error.message)
     else setInvoices((current) => [invoice.data, ...current])
@@ -2002,6 +2028,30 @@ function Finance() {
     setInvoices((current) => current.map((entry) => entry.id === invoice.id
       ? { ...entry, shared_with_client: !invoice.shared_with_client }
       : entry))
+  }
+  async function copyCheckoutLink(invoice) {
+    if (!supabase) return
+    setSharingInvoiceId(invoice.id)
+    setFinanceShareMessage('')
+    const { data: token, error: tokenError } = await supabase.rpc('create_invoice_checkout_link', {
+      target_invoice: invoice.id,
+    })
+    if (tokenError) {
+      setError(tokenError.message)
+      setSharingInvoiceId('')
+      return
+    }
+    const checkoutLink = `${window.location.origin}${appPath(`/pay/${token}`)}`
+    try {
+      await navigator.clipboard.writeText(checkoutLink)
+      setFinanceShareMessage(`Checkout link copied for invoice ${invoice.number}. It lets your client choose a deposit or pay the remaining balance.`)
+      setInvoices((current) => current.map((entry) => entry.id === invoice.id
+        ? { ...entry, checkout_token: token }
+        : entry))
+    } catch (shareError) {
+      setError(shareError instanceof Error ? shareError.message : 'Could not copy the checkout link.')
+    }
+    setSharingInvoiceId('')
   }
   async function deleteInvoice(invoice) {
     if (!supabase || !workspace || !window.confirm(`Delete invoice #${invoice.number}? Its line items, payment records, and receipts will also be permanently deleted. The income total will be reduced by any recorded payments.`)) return
@@ -2042,7 +2092,7 @@ function Finance() {
       return
     }
     setSharingReceiptId(receipt.receipt_number)
-    setReceiptShareMessage('')
+    setFinanceShareMessage('')
     if (!invoice.shared_with_client) {
       const { error: shareError } = await supabase.rpc('set_invoice_client_sharing', {
         target_invoice: invoice.id,
@@ -2058,7 +2108,7 @@ function Finance() {
     const receiptLink = `${window.location.origin}${appPath('/portal')}?receipt=${encodeURIComponent(receipt.receipt_number)}`
     try {
       await navigator.clipboard.writeText(receiptLink)
-      setReceiptShareMessage(`Receipt link copied for ${invoice.clients?.name || 'the client'}. The invoice and receipt are now available in their portal.`)
+      setFinanceShareMessage(`Receipt link copied for ${invoice.clients?.name || 'the client'}. The invoice and receipt are now available in their portal.`)
     } catch (shareError) {
       setError(shareError instanceof Error ? shareError.message : 'Could not copy the receipt link. Please copy it from the browser address bar.')
     }
@@ -2102,7 +2152,7 @@ function Finance() {
       payments: [...(manualPaymentInvoice.payments || []), recordedPayment],
     }
     setInvoices((current) => current.map((entry) => entry.id === manualPaymentInvoice.id ? invoiceUpdate : entry))
-    const receipt = { ...asRows(recordedPayment.receipts)[0], receipt_number: data?.receipt_number, issued_at: data?.paid_at, payment: { amount: String(amount), paid_at: data?.paid_at } }
+    const receipt = { ...asRows(recordedPayment.receipts)[0], receipt_number: data?.receipt_number, issued_at: data?.paid_at, payment: { amount: String(amount), paid_at: data?.paid_at }, amountPaidToDate: data?.amount_paid }
     setPrintInvoice({ ...invoiceUpdate, receipt })
     setManualPaymentInvoice(null)
   }
@@ -2141,17 +2191,22 @@ function Finance() {
   return <main className="studio-page">
     <StudioPageHeader kicker="THE BUSINESS / FINANCE" title="Keep the<br />numbers clear." action={<div className="finance-actions"><button className="button button-soft" onClick={() => setExpenseForm(true)}><Plus size={15} /> Expense</button><button className="button button-yellow" disabled={!workspace} onClick={openInvoiceForm}><Plus size={16} /> Create invoice</button></div>} />
     {error && <p className="notice-error">{error}</p>}
-    {receiptShareMessage && <p className="notice-success">{receiptShareMessage}</p>}
-    <div className="finance-note"><LockKeyhole size={18} /><div><b>Manual bank transfer is enabled.</b><span>Share the invoice with the client and record a payment after you verify the transfer. A receipt is generated inside the app and added to the income total.</span></div></div>
+    {financeShareMessage && <p className="notice-success">{financeShareMessage}</p>}
+    <div className="finance-note"><LockKeyhole size={18} /><div><b>Bachs checkout and manual transfer are enabled.</b><span>Copy an invoice checkout link for external clients or share the invoice in the portal. Bachs-confirmed payments create receipts for both sides, update the balance, and refresh Finance automatically.</span></div></div>
     <div className="dashboard-stats finance-stats"><div><span>INCOME</span><b>{money(totalPaid)}</b></div><div><span>RECORDED EXPENSES</span><b>{money(totalExpenses)}</b></div><div><span>NET (RECORDED)</span><b>{money(totalPaid - totalExpenses)}</b></div></div>
     <div className="studio-section-heading"><div><p className="kicker">STUDIO RECORDS</p><h2>Invoices</h2></div></div>
-    {invoices.length ? <div className="record-list">{invoices.map((invoice) => <div className="record-row" key={invoice.id}><FileText /><div className="record-main"><b>#{invoice.number} · {invoice.clients?.name || 'Client not linked'}</b><span>{money(Number(invoice.amount))} · {invoice.status}</span>{asRows(invoice.payments).flatMap((payment) => asRows(payment.receipts)).filter((receipt) => receipt?.receipt_number).map((receipt) => <small key={receipt.receipt_number}>Verified receipt: {receipt.receipt_number}</small>)}</div><span className="muted-copy">{invoice.due_date || 'No due date'}</span><button className="button button-soft" onClick={() => setPrintInvoice(invoice)}>Print invoice</button><button className="button button-soft" onClick={() => setManualPaymentInvoice(invoice)}>Record payment</button><button className="button button-soft" disabled={!invoice.client_id || sharingInvoiceId === invoice.id} onClick={() => toggleInvoicePortal(invoice)}>{sharingInvoiceId === invoice.id ? 'Updating…' : invoice.shared_with_client ? 'Remove portal access' : invoice.client_id ? 'Share to client portal' : 'Link a client first'}</button><button className="button button-danger" disabled={deletingInvoiceId === invoice.id} onClick={() => deleteInvoice(invoice)} aria-label={`Delete invoice ${invoice.number}`}>{deletingInvoiceId === invoice.id ? 'Deleting…' : <><Trash2 size={15} /> Delete</>}</button></div>)}</div> : <div className="studio-empty"><FileText /><h3>No invoices yet.</h3><p>Create a draft invoice for a client or project. Once a transfer is verified, record the payment to generate a receipt and move the income into the ledger.</p><button className="button button-dark" onClick={openInvoiceForm}><Plus size={15} /> Create invoice</button></div>}
+    {invoices.length ? <div className="record-list">{invoices.map((invoice) => {
+      const paid = asRows(invoice.payments).filter((payment) => payment.status === 'succeeded').reduce((sum, payment) => sum + Number(payment.amount), 0)
+      const balance = Math.max(Number(invoice.amount) - paid, 0)
+      const payable = balance > 0 && ['open', 'overdue'].includes(invoice.status)
+      return <div className="record-row" key={invoice.id}><FileText /><div className="record-main"><b>#{invoice.number} · {invoice.clients?.name || 'Client not linked'}</b><span>{money(Number(invoice.amount))} · {invoice.status}</span><small>{money(paid)} received · {money(balance)} remaining</small>{asRows(invoice.payments).flatMap((payment) => asRows(payment.receipts)).filter((receipt) => receipt?.receipt_number).map((receipt) => <small key={receipt.receipt_number}>Verified receipt: {receipt.receipt_number}</small>)}</div><span className="muted-copy">{invoice.due_date || 'No due date'}</span><button className="button button-soft" onClick={() => setPrintInvoice(invoice)}>Print invoice</button>{payable && <><button className="button button-soft" onClick={() => setManualPaymentInvoice(invoice)}>Record payment</button><button className="button button-soft" disabled={sharingInvoiceId === invoice.id} onClick={() => copyCheckoutLink(invoice)}>{sharingInvoiceId === invoice.id ? 'Copying…' : 'Copy checkout link'}</button></>}<button className="button button-soft" disabled={!invoice.client_id || sharingInvoiceId === invoice.id} onClick={() => toggleInvoicePortal(invoice)}>{sharingInvoiceId === invoice.id ? 'Updating…' : invoice.shared_with_client ? 'Remove portal access' : invoice.client_id ? 'Share to client portal' : 'Link a client first'}</button><button className="button button-danger" disabled={deletingInvoiceId === invoice.id} onClick={() => deleteInvoice(invoice)} aria-label={`Delete invoice ${invoice.number}`}>{deletingInvoiceId === invoice.id ? 'Deleting…' : <><Trash2 size={15} /> Delete</>}</button></div>
+    })}</div> : <div className="studio-empty"><FileText /><h3>No invoices yet.</h3><p>Create an invoice, copy its Bachs checkout link, or record a verified bank transfer. Each confirmed payment issues a receipt and updates the balance.</p><button className="button button-dark" onClick={openInvoiceForm}><Plus size={15} /> Create invoice</button></div>}
     <div className="studio-section-heading"><div><p className="kicker">PAYMENT RECORDS</p><h2>Receipts</h2></div></div>
     {receipts.length ? <div className="record-list">{receipts.map(({ receipt, payment, invoice }) => <article className="record-row" key={receipt.receipt_number}><FileText /><div className="record-main"><b>{receipt.receipt_number} · {invoice.clients?.name || 'Client not linked'}</b><span>Invoice #{invoice.number} · {money(Number(payment.amount))} · {payment.paid_at ? new Date(payment.paid_at).toLocaleDateString() : new Date(receipt.issued_at).toLocaleDateString()}</span><small>{invoice.shared_with_client ? 'Client copy available in portal' : 'Client copy not shared yet'}</small></div><button className="button button-soft" onClick={() => setPrintInvoice({ ...invoice, receipt: { ...receipt, payment } })}>Print studio receipt</button><button className="button button-soft" onClick={() => setPrintInvoice({ ...invoice, receipt: { ...receipt, payment }, receiptAudience: 'client' })}>Print client copy</button><button className="button button-soft" disabled={!invoice.client_id || sharingReceiptId === receipt.receipt_number} onClick={() => shareReceipt(invoice, receipt)}>{sharingReceiptId === receipt.receipt_number ? 'Preparing…' : 'Copy client receipt link'}</button><button className="button button-danger" disabled={!receipt.id || deletingReceiptId === receipt.id} onClick={() => deleteReceipt(invoice, payment, receipt)} aria-label={`Delete receipt ${receipt.receipt_number}`}>{deletingReceiptId === receipt.id ? 'Deleting…' : <><Trash2 size={15} /> Delete</>}</button></article>)}</div> : <p className="empty-copy">Receipts generated from verified payments will be stored here.</p>}
     <div className="studio-section-heading"><div><p className="kicker">BUSINESS COSTS</p><h2>Expenses</h2></div></div>
     {expenses.length ? <div className="record-list">{expenses.map((expense) => <div className="record-row" key={expense.id}><span className="project-index index-2"><FileText size={17} /></span><div className="record-main"><b>{expense.description}</b><span>{expense.category} · {expense.incurred_on}</span></div><b>{money(Number(expense.amount))}</b><button className="button button-danger" disabled={deletingExpenseId === expense.id} onClick={() => deleteExpense(expense)} aria-label={`Delete expense ${expense.description}`}>{deletingExpenseId === expense.id ? 'Deleting…' : <><Trash2 size={15} /> Delete</>}</button></div>)}</div> : <p className="empty-copy">Record business costs to calculate net income from real records.</p>}
-    {invoiceForm && <Modal title="Create an invoice" onClose={() => setInvoiceForm(false)}><form onSubmit={createInvoice}><label>Invoice number<input name="number" required maxLength="80" placeholder="e.g. GL-001" /></label><label>Client<select name="client_id" defaultValue=""><option value="">No client linked</option>{clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label><label>Project<select name="project_id" defaultValue=""><option value="">No project linked</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label><div className="invoice-line-items"><div className="invoice-line-items-heading"><b>Line items</b><button className="button button-soft" type="button" onClick={() => setLineItems((current) => [...current, { description: '', quantity: '1', unit_amount: '' }])}><Plus size={14} /> Add item</button></div>{lineItems.map((item, index) => <div className="invoice-line-row" key={index}><label>Description<input value={item.description} onChange={(event) => updateLineItem(index, 'description', event.target.value)} maxLength="500" placeholder="Brand identity design" required /></label><label>Qty<input type="number" value={item.quantity} onChange={(event) => updateLineItem(index, 'quantity', event.target.value)} min="0.01" step="0.01" required /></label><label>Unit price<input type="number" value={item.unit_amount} onChange={(event) => updateLineItem(index, 'unit_amount', event.target.value)} min="0" step="0.01" required /></label>{lineItems.length > 1 && <button className="icon-button invoice-line-remove" type="button" aria-label={`Remove line item ${index + 1}`} onClick={() => setLineItems((current) => current.filter((_, itemIndex) => itemIndex !== index))}><X size={15} /></button>}</div>)}    <div className="invoice-total-preview"><span>Invoice total</span><b>{money(lineItems.reduce((sum, item) => sum + Math.round((Number(item.quantity) || 0) * (Number(item.unit_amount) || 0) * 100) / 100, 0))}</b></div></div><label>Due date<input name="due_date" type="date" /></label><p className="muted-copy">Invoices linked to a client are shared to their portal automatically. Payment is made by bank transfer and tracked after verification.</p><button className="button button-dark" disabled={saving}>{saving ? 'Saving…' : 'Create invoice'} <ArrowRight size={15} /></button></form></Modal>}
-    {manualPaymentInvoice && <Modal title={`Confirm payment for invoice ${manualPaymentInvoice.number}`} onClose={() => setManualPaymentInvoice(null)}><form onSubmit={recordManualPayment}><label>Amount received<input name="amount" type="number" required min="0.01" step="0.01" defaultValue={manualPaymentInvoice.amount} /></label><label>Bank transfer reference<input name="reference" placeholder="Optional transaction reference" maxLength="120" /></label><label>Payment date<input name="paid_on" type="date" defaultValue={new Date().toISOString().slice(0, 10)} /></label><label>Notes<textarea name="note" rows="3" placeholder="Bank transfer confirmation, account holder, or any matching details." maxLength="500" /></label><p className="muted-copy">This records a successful manual bank transfer and generates a receipt that can be printed and shared with the client.</p><button className="button button-dark" disabled={saving}>{saving ? 'Saving…' : 'Record payment'} <Check size={15} /></button></form></Modal>}
+    {invoiceForm && <Modal title="Create an invoice" onClose={() => setInvoiceForm(false)}><form onSubmit={createInvoice}><label>Invoice number<input name="number" required maxLength="80" placeholder="e.g. GL-001" /></label><label>Client<select name="client_id" defaultValue=""><option value="">No client linked</option>{clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label><label>Project<select name="project_id" defaultValue=""><option value="">No project linked</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label><div className="invoice-line-items"><div className="invoice-line-items-heading"><b>Line items</b><button className="button button-soft" type="button" onClick={() => setLineItems((current) => [...current, { description: '', quantity: '1', unit_amount: '' }])}><Plus size={14} /> Add item</button></div>{lineItems.map((item, index) => <div className="invoice-line-row" key={index}><label>Description<input value={item.description} onChange={(event) => updateLineItem(index, 'description', event.target.value)} maxLength="500" placeholder="Brand identity design" required /></label><label>Qty<input type="number" value={item.quantity} onChange={(event) => updateLineItem(index, 'quantity', event.target.value)} min="0.01" step="0.01" required /></label><label>Unit price<input type="number" value={item.unit_amount} onChange={(event) => updateLineItem(index, 'unit_amount', event.target.value)} min="0" step="0.01" required /></label>{lineItems.length > 1 && <button className="icon-button invoice-line-remove" type="button" aria-label={`Remove line item ${index + 1}`} onClick={() => setLineItems((current) => current.filter((_, itemIndex) => itemIndex !== index))}><X size={15} /></button>}</div>)}    <div className="invoice-total-preview"><span>Invoice total</span><b>{money(lineItems.reduce((sum, item) => sum + Math.round((Number(item.quantity) || 0) * (Number(item.unit_amount) || 0) * 100) / 100, 0))}</b></div></div><label>Due date<input name="due_date" type="date" /></label><p className="muted-copy">Invoices linked to a client are shared to their portal automatically. Clients can choose an online deposit or pay the remaining balance using their checkout link.</p><button className="button button-dark" disabled={saving}>{saving ? 'Saving…' : 'Create invoice'} <ArrowRight size={15} /></button></form></Modal>}
+    {manualPaymentInvoice && <Modal title={`Confirm payment for invoice ${manualPaymentInvoice.number}`} onClose={() => setManualPaymentInvoice(null)}><form onSubmit={recordManualPayment}><label>Amount received<input name="amount" type="number" required min="0.01" max={invoiceBalance(manualPaymentInvoice)} step="0.01" defaultValue={invoiceBalance(manualPaymentInvoice)} /></label><label>Bank transfer reference<input name="reference" placeholder="Optional transaction reference" maxLength="120" /></label><label>Payment date<input name="paid_on" type="date" defaultValue={new Date().toISOString().slice(0, 10)} /></label><label>Notes<textarea name="note" rows="3" placeholder="Bank transfer confirmation, account holder, or any matching details." maxLength="500" /></label><p className="muted-copy">This records a successful manual bank transfer and generates a receipt that can be printed and shared with the client.</p><button className="button button-dark" disabled={saving}>{saving ? 'Saving…' : 'Record payment'} <Check size={15} /></button></form></Modal>}
     {expenseForm && <Modal title="Record an expense" onClose={() => setExpenseForm(false)}><form onSubmit={createExpense}><label>Description<input name="description" required maxLength="240" /></label><label>Category<select name="category"><option value="other">Other</option><option value="production">Production</option><option value="software">Software</option><option value="equipment">Equipment</option><option value="travel">Travel</option><option value="contractor">Contractor</option></select></label><label>Project<select name="project_id" defaultValue=""><option value="">Studio-wide</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label><label>Amount (NGN)<input name="amount" required type="number" min="0.01" step="0.01" /></label><label>Date<input name="incurred_on" required type="date" defaultValue={new Date().toISOString().slice(0, 10)} /></label><button className="button button-dark" disabled={saving}>{saving ? 'Saving…' : 'Save expense'} <ArrowRight size={15} /></button></form></Modal>}
     {printInvoice && <PrintableInvoice invoice={printInvoice} studioName={workspace?.studio_name || 'GLYPH Creative Studio'} studioEmail={workspace?.contact_email || ''} onClose={() => setPrintInvoice(null)} />}
   </main>
@@ -2161,6 +2216,10 @@ function PrintableInvoice({ invoice, studioName, studioEmail, onClose }) {
   const receipt = invoice.receipt
   const items = invoice.invoice_items || []
   const amount = receipt ? Number(receipt.payment?.amount) : Number(invoice.amount)
+  const paidToDate = receipt && Number.isFinite(Number(receipt.amountPaidToDate))
+    ? Number(receipt.amountPaidToDate)
+    : invoicePaid(invoice)
+  const balance = Math.max(Number(invoice.amount) - paidToDate, 0)
   const isClientCopy = receipt && invoice.receiptAudience === 'client'
   return <div className="print-document-overlay">
     <div className="print-document-actions"><button className="button button-soft" onClick={onClose}>Close</button><button className="button button-dark" onClick={() => window.print()}>Print / Save PDF</button></div>
@@ -2169,12 +2228,199 @@ function PrintableInvoice({ invoice, studioName, studioEmail, onClose }) {
       <div className="print-document-meta"><div><small>{receipt ? 'RECEIPT NUMBER' : 'INVOICE NUMBER'}</small><b>{receipt?.receipt_number || invoice.number}</b></div><div><small>ISSUED</small><b>{new Date(receipt?.issued_at || invoice.created_at || Date.now()).toLocaleDateString()}</b></div>{!receipt && invoice.due_date && <div><small>DUE DATE</small><b>{new Date(`${invoice.due_date}T00:00:00`).toLocaleDateString()}</b></div>}</div>
       <section className="print-document-client"><small>{isClientCopy ? 'PAID BY' : receipt ? 'RECEIVED FROM' : 'BILLED TO'}</small><b>{invoice.clients?.name || 'Client'}</b>{invoice.clients?.company && <span>{invoice.clients.company}</span>}{invoice.clients?.email && <span>{invoice.clients.email}</span>}{isClientCopy && <><small>PAID TO</small><b>{studioName}</b>{studioEmail && <span>{studioEmail}</span>}</>}</section>
       <table><thead><tr><th>Description</th><th>Qty</th><th>Unit price</th><th>Amount</th></tr></thead><tbody>{items.map((item) => <tr key={item.id || item.description}><td>{item.description}</td><td>{Number(item.quantity)}</td><td>{money(Number(item.unit_amount))}</td><td>{money(Number(item.quantity) * Number(item.unit_amount))}</td></tr>)}</tbody></table>
-      <div className="print-document-total"><span>{isClientCopy ? 'AMOUNT YOU PAID' : receipt ? 'AMOUNT RECEIVED' : invoice.status === 'paid' ? 'TOTAL PAID' : 'TOTAL DUE'}</span><b>{money(amount)}</b></div>
+      <div className="print-document-total"><span>{isClientCopy ? 'AMOUNT YOU PAID' : receipt ? 'AMOUNT RECEIVED' : 'INVOICE TOTAL'}</span><b>{money(amount)}</b></div>
+      <div className="print-document-balance"><div><span>INVOICE TOTAL</span><b>{money(Number(invoice.amount))}</b></div><div><span>PAID TO DATE</span><b>{money(paidToDate)}</b></div><div><span>BALANCE LEFT TO PAY</span><b>{money(balance)}</b></div></div>
       <footer>{receipt ? isClientCopy
-        ? `Payment confirmed · ${invoice.clients?.name || 'Client'} paid ${money(amount)} to ${studioName} on ${receipt.payment?.paid_at ? new Date(receipt.payment.paid_at).toLocaleDateString() : new Date(receipt.issued_at).toLocaleDateString()}.`
-        : `Payment received · ${money(amount)} received from ${invoice.clients?.name || 'Client'} on ${receipt.payment?.paid_at ? new Date(receipt.payment.paid_at).toLocaleDateString() : new Date(receipt.issued_at).toLocaleDateString()}.`
+        ? `Payment confirmed · ${invoice.clients?.name || 'Client'} paid ${money(amount)} to ${studioName} on ${receipt.payment?.paid_at ? new Date(receipt.payment.paid_at).toLocaleDateString() : new Date(receipt.issued_at).toLocaleDateString()}. Balance remaining: ${money(balance)}.`
+        : `Payment received · ${money(amount)} received from ${invoice.clients?.name || 'Client'} on ${receipt.payment?.paid_at ? new Date(receipt.payment.paid_at).toLocaleDateString() : new Date(receipt.issued_at).toLocaleDateString()}. Balance remaining: ${money(balance)}.`
         : 'Please use the payment instructions provided by the studio. Thank you for your business.'}</footer>
     </article>
+  </div>
+}
+
+function PublicInvoiceCheckout() {
+  const { token } = useParams()
+  const [invoice, setInvoice] = useState(null)
+  const [percentage, setPercentage] = useState('100')
+  const [loading, setLoading] = useState(true)
+  const [paying, setPaying] = useState(false)
+  const [checkingPayment, setCheckingPayment] = useState(new URLSearchParams(window.location.search).get('payment') === 'returned')
+  const [paymentMessage, setPaymentMessage] = useState('')
+  const [error, setError] = useState('')
+  const [printInvoice, setPrintInvoice] = useState(null)
+
+  useEffect(() => {
+    let active = true
+    let interval
+    let initialPaid
+    let attempts = 0
+    let requestInProgress = false
+    const returnedFromCheckout = new URLSearchParams(window.location.search).get('payment') === 'returned'
+
+    const loadInvoice = async (isPoll = false) => {
+      if (!supabase || requestInProgress) return
+      requestInProgress = true
+      const { data, error: requestError } = await supabase.functions.invoke('bachs-checkout', {
+        body: { action: 'details', token },
+      })
+      requestInProgress = false
+      if (!active) return
+      if (requestError) {
+        if (!isPoll) setError(await edgeFunctionError(requestError, 'Could not load this invoice checkout link.'))
+        return
+      }
+      if (!data?.invoice) {
+        if (!isPoll) setError('This invoice checkout link is unavailable.')
+        return
+      }
+
+      setInvoice(data.invoice)
+      setLoading(false)
+      if (!isPoll) {
+        initialPaid = Number(data.invoice.amount_paid)
+        if (returnedFromCheckout) {
+          const recentReceipt = asRows(data.invoice.receipts).some((receipt) =>
+            Date.now() - new Date(receipt.paid_at || receipt.issued_at).getTime() < 10 * 60 * 1000)
+          if (recentReceipt) {
+            setCheckingPayment(false)
+            setPaymentMessage('Bachs confirmed your payment. Your receipt is ready below.')
+          }
+        }
+        return
+      }
+
+      const newReceipt = asRows(data.invoice.receipts).some((receipt) =>
+        Date.now() - new Date(receipt.paid_at || receipt.issued_at).getTime() < 10 * 60 * 1000)
+      if (newReceipt || Number(data.invoice.amount_paid) > initialPaid) {
+        setCheckingPayment(false)
+        setPaymentMessage('Bachs confirmed your payment. Your receipt is ready below.')
+        clearInterval(interval)
+      }
+    }
+
+    async function loadAndStartPolling() {
+      if (!supabase) {
+        setError(supabaseConfigMessage)
+        setLoading(false)
+        return
+      }
+      await loadInvoice()
+      if (active && returnedFromCheckout) {
+        interval = window.setInterval(() => {
+          attempts += 1
+          if (attempts > 20) {
+            clearInterval(interval)
+            setCheckingPayment(false)
+            setPaymentMessage('Payment is not confirmed yet. This page will show your receipt after Bachs verifies the payment.')
+            return
+          }
+          loadInvoice(true)
+        }, 3000)
+      }
+    }
+
+    loadAndStartPolling()
+    return () => {
+      active = false
+      clearInterval(interval)
+    }
+  }, [token])
+
+  async function startCheckout(event) {
+    event.preventDefault()
+    if (!supabase || !invoice) return
+    setPaying(true)
+    setError('')
+    const { data, error: checkoutError } = await supabase.functions.invoke('bachs-checkout', {
+      body: { action: 'checkout', token, percentage: Number(percentage) },
+    })
+    setPaying(false)
+    if (checkoutError) {
+      setError(await edgeFunctionError(checkoutError, 'Bachs checkout could not be started.'))
+      return
+    }
+    if (typeof data?.checkout_url !== 'string') {
+      setError(data?.error || 'Bachs did not return a checkout link.')
+      return
+    }
+    window.location.assign(data.checkout_url)
+  }
+
+  const amount = invoice
+    ? percentage === '100'
+      ? Number(invoice.amount_remaining)
+      : Math.min(Number(invoice.amount) * Number(percentage) / 100, Number(invoice.amount_remaining))
+    : 0
+  const clientInvoice = invoice && {
+    id: invoice.invoice_id,
+    number: invoice.number,
+    amount: Number(invoice.amount),
+    currency: invoice.currency,
+    status: invoice.status,
+    created_at: invoice.created_at,
+    clients: { name: invoice.client_name, email: invoice.client_email },
+    invoice_items: asRows(invoice.items).map((item, index) => ({ ...item, id: `${invoice.invoice_id}-${index}` })),
+    payments: asRows(invoice.receipts).map((receipt) => ({
+      status: 'succeeded',
+      amount: receipt.amount,
+      paid_at: receipt.paid_at,
+    })),
+    receiptAmountPaid: Number(invoice.amount_paid),
+  }
+
+  return <div className="public-site">
+    <header className="portal-header wrap"><Brand /><span>SECURE INVOICE CHECKOUT</span><Link className="quiet-link" to="/">Back to studio</Link></header>
+    <main className="wrap public-checkout">
+      {loading ? <p className="loading-copy">Loading invoice…</p> : error && !invoice
+        ? <div className="studio-empty"><FileText /><h1>Checkout link unavailable</h1><p>{error}</p></div>
+        : invoice && <>
+          <p className="kicker">{invoice.studio_name || 'GLYPH Creative Studio'} / INVOICE</p>
+          <h1>Invoice <em>#{invoice.number}</em></h1>
+          <p className="public-checkout-client">For {invoice.client_name || 'client'} · {invoice.currency}</p>
+          <section className="public-checkout-summary">
+            {asRows(invoice.items).map((item, index) => <div className="public-checkout-item" key={`${item.description}-${index}`}><span>{item.description} · {Number(item.quantity)} × {money(Number(item.unit_amount))}</span><b>{money(Number(item.quantity) * Number(item.unit_amount))}</b></div>)}
+            <div className="public-checkout-total"><span>Invoice total</span><b>{money(Number(invoice.amount))}</b></div>
+            <div className="public-checkout-item"><span>Paid to date</span><b>{money(Number(invoice.amount_paid))}</b></div>
+            <div className="public-checkout-total"><span>Remaining balance</span><b>{money(Number(invoice.amount_remaining))}</b></div>
+          </section>
+          {paymentMessage && <p className="notice-success">{paymentMessage}</p>}
+          {checkingPayment && <p className="muted-copy">Waiting for Bachs to confirm your payment. Your receipt will appear here as soon as it is verified.</p>}
+          {error && invoice && <p className="notice-error">{error}</p>}
+          {['open', 'overdue'].includes(invoice.status) && Number(invoice.amount_remaining) > 0
+            ? <form className="public-checkout-form" onSubmit={startCheckout}>
+              <p className="kicker">CHOOSE YOUR PAYMENT</p>
+              <label>Pay now<select value={percentage} onChange={(event) => setPercentage(event.target.value)}>
+                <option value="25">25% deposit · {money(Math.min(Number(invoice.amount) * 0.25, Number(invoice.amount_remaining)))}</option>
+                <option value="50">50% deposit · {money(Math.min(Number(invoice.amount) * 0.5, Number(invoice.amount_remaining)))}</option>
+                <option value="75">75% deposit · {money(Math.min(Number(invoice.amount) * 0.75, Number(invoice.amount_remaining)))}</option>
+                <option value="100">Remaining balance · {money(Number(invoice.amount_remaining))}</option>
+              </select></label>
+              <p className="muted-copy">Deposit percentages are based on the original invoice and capped at the remaining balance. Each confirmed payment generates a receipt showing this payment, the total paid so far, and the balance still due.</p>
+              <button className="button button-yellow" disabled={paying || checkingPayment}>{paying ? 'Opening secure checkout…' : `Pay ${money(amount)} with Bachs`} <ArrowRight size={15} /></button>
+            </form>
+            : Number(invoice.amount_remaining) <= 0
+              ? <p className="notice-success">This invoice has been paid in full.</p>
+              : <p className="notice-error">This invoice is not currently available for payment. Contact the studio if you think this is a mistake.</p>}
+          {asRows(invoice.receipts).length > 0 && <section className="public-checkout-receipts">
+            <p className="kicker">PAYMENT RECEIPTS</p>
+            {asRows(invoice.receipts).map((receipt) => <div className="public-checkout-receipt" key={receipt.receipt_number}>
+              <span><b>{receipt.receipt_number}</b><small>{money(Number(receipt.amount))} · {new Date(receipt.paid_at || receipt.issued_at).toLocaleDateString()}</small></span>
+              <button className="button button-soft" onClick={() => setPrintInvoice({
+                ...clientInvoice,
+                receipt: {
+                  receipt_number: receipt.receipt_number,
+                  issued_at: receipt.issued_at,
+                  payment: { amount: receipt.amount, paid_at: receipt.paid_at },
+                  amountPaidToDate: invoice.amount_paid,
+                },
+                receiptAudience: 'client',
+              })}>Print receipt</button>
+            </div>)}
+          </section>}
+        </>}
+    </main>
+    {printInvoice && <PrintableInvoice invoice={printInvoice} studioName={invoice?.studio_name || 'GLYPH Creative Studio'} studioEmail={invoice?.studio_email || ''} onClose={() => setPrintInvoice(null)} />}
+    <SiteFooter />
   </div>
 }
 
@@ -2231,7 +2477,7 @@ function StudioSettings() {
     }
     setSaving(false)
   }
-  return <main className="studio-page"><StudioPageHeader kicker="PREFERENCES / YOUR STUDIO" title="Make it<br />feel like yours." />{error && <p className="notice-error">{error}</p>}{saved && <p className="notice-success">{saved}</p>}<div className="settings-columns"><form className="settings-panel" onSubmit={saveProfile}><p className="kicker">YOUR ACCOUNT</p><h2>Your details</h2><label>Full name<input name="full_name" defaultValue={profile?.full_name || ''} required maxLength="160" /></label><label>Account email<input value={user?.email || ''} readOnly /></label><button className="button button-dark" disabled={saving}>Save profile</button></form><form key={workspace?.id || 'loading'} className="settings-panel settings-brand-form" onSubmit={saveStudio}><p className="kicker">PUBLIC STUDIO / BRAND</p><h2>Make the site yours</h2><label>Studio name<input name="studio_name" defaultValue={workspace?.studio_name || ''} required maxLength="180" /></label><label>Tagline<input name="tagline" defaultValue={workspace?.tagline || 'INDEPENDENT CREATIVE STUDIO'} required maxLength="120" /></label><label>Your location<input name="location" defaultValue={workspace?.location || 'Lagos & everywhere'} required maxLength="120" /></label><label>Homepage headline<textarea name="hero_title" rows="2" defaultValue={workspace?.hero_title || 'Ideas into\nidentity.'} required maxLength="180" /></label><label>Homepage introduction<textarea name="hero_subtitle" rows="3" defaultValue={workspace?.hero_subtitle || 'We shape brands, images and moving stories for people building something that matters.'} required maxLength="500" /></label><label>About your studio<textarea name="about_text" rows="4" defaultValue={workspace?.about_text || 'GLYPH is an independent creative studio partnering with ambitious people to build thoughtful brands and vivid visual worlds.'} required maxLength="2000" /></label><label>Services (one per line)<textarea name="services" rows="5" defaultValue={(workspace?.services?.length ? workspace.services : services).join('\n')} required /></label><label>CONTACT EMAIL<input name="contact_email" type="email" defaultValue={workspace?.contact_email || ''} maxLength="254" /></label><label>Brand accent<input name="brand_color" type="color" defaultValue={workspace?.brand_color || '#2946d8'} /></label><label>Bank name<input name="payment_bank_name" defaultValue={workspace?.payment_bank_name || ''} maxLength="120" /></label><label>Account holder name<input name="payment_account_name" defaultValue={workspace?.payment_account_name || ''} maxLength="160" /></label><label>Account number<input name="payment_account_number" defaultValue={workspace?.payment_account_number || ''} maxLength="32" /></label><label>Reference note<input name="payment_reference_note" defaultValue={workspace?.payment_reference_note || 'Use the invoice number as reference.'} maxLength="160" /></label><label>Optional payment note<textarea name="payment_note" rows="3" defaultValue={workspace?.payment_note || 'Send your transfer confirmation to the studio email after payment.'} maxLength="500" /></label><label>Portfolio address<input value={`${window.location.origin}/portfolio`} readOnly /></label><button className="button button-dark" disabled={saving || !workspace}>{saving ? 'Saving…' : 'Save public site'}</button></form></div><section className="later-features"><p className="kicker">CONNECT WHEN YOU’RE READY</p><div><span>Social account connections & scheduling</span><b>Needs your provider accounts</b></div><div><span>Custom email & community</span><b>Needs sending and hosting setup</b></div><div><span>AI inquiry assistant and quotes</span><b>Needs an approved provider and studio pricing</b></div><div><span>Manual bank transfer payments</span><b>Added to the invoice flow with receipt tracking</b></div></section></main>
+  return <main className="studio-page"><StudioPageHeader kicker="PREFERENCES / YOUR STUDIO" title="Make it<br />feel like yours." />{error && <p className="notice-error">{error}</p>}{saved && <p className="notice-success">{saved}</p>}<div className="settings-columns"><form className="settings-panel" onSubmit={saveProfile}><p className="kicker">YOUR ACCOUNT</p><h2>Your details</h2><label>Full name<input name="full_name" defaultValue={profile?.full_name || ''} required maxLength="160" /></label><label>Account email<input value={user?.email || ''} readOnly /></label><button className="button button-dark" disabled={saving}>Save profile</button></form><form key={workspace?.id || 'loading'} className="settings-panel settings-brand-form" onSubmit={saveStudio}><p className="kicker">PUBLIC STUDIO / BRAND</p><h2>Make the site yours</h2><label>Studio name<input name="studio_name" defaultValue={workspace?.studio_name || ''} required maxLength="180" /></label><label>Tagline<input name="tagline" defaultValue={workspace?.tagline || 'INDEPENDENT CREATIVE STUDIO'} required maxLength="120" /></label><label>Your location<input name="location" defaultValue={workspace?.location || 'Lagos & everywhere'} required maxLength="120" /></label><label>Homepage headline<textarea name="hero_title" rows="2" defaultValue={workspace?.hero_title || 'Ideas into\nidentity.'} required maxLength="180" /></label><label>Homepage introduction<textarea name="hero_subtitle" rows="3" defaultValue={workspace?.hero_subtitle || 'We shape brands, images and moving stories for people building something that matters.'} required maxLength="500" /></label><label>About your studio<textarea name="about_text" rows="4" defaultValue={workspace?.about_text || 'GLYPH is an independent creative studio partnering with ambitious people to build thoughtful brands and vivid visual worlds.'} required maxLength="2000" /></label><label>Services (one per line)<textarea name="services" rows="5" defaultValue={(workspace?.services?.length ? workspace.services : services).join('\n')} required /></label><label>CONTACT EMAIL<input name="contact_email" type="email" defaultValue={workspace?.contact_email || ''} maxLength="254" /></label><label>Brand accent<input name="brand_color" type="color" defaultValue={workspace?.brand_color || '#2946d8'} /></label><label>Bank name<input name="payment_bank_name" defaultValue={workspace?.payment_bank_name || ''} maxLength="120" /></label><label>Account holder name<input name="payment_account_name" defaultValue={workspace?.payment_account_name || ''} maxLength="160" /></label><label>Account number<input name="payment_account_number" defaultValue={workspace?.payment_account_number || ''} maxLength="32" /></label><label>Reference note<input name="payment_reference_note" defaultValue={workspace?.payment_reference_note || 'Use the invoice number as reference.'} maxLength="160" /></label><label>Optional payment note<textarea name="payment_note" rows="3" defaultValue={workspace?.payment_note || 'Send your transfer confirmation to the studio email after payment.'} maxLength="500" /></label><label>Portfolio address<input value={`${window.location.origin}/portfolio`} readOnly /></label><button className="button button-dark" disabled={saving || !workspace}>{saving ? 'Saving…' : 'Save public site'}</button></form></div><section className="later-features"><p className="kicker">CONNECT WHEN YOU’RE READY</p><div><span>Social account connections & scheduling</span><b>Needs your provider accounts</b></div><div><span>Custom email & community</span><b>Needs sending and hosting setup</b></div><div><span>AI inquiry assistant and quotes</span><b>Needs an approved provider and studio pricing</b></div><div><span>Bachs checkout and manual transfers</span><b>Set up Bachs credentials in Supabase</b></div></section></main>
 }
 
 function ClientPortal() {
@@ -2282,7 +2528,7 @@ function ClientPortal() {
       }
       const [projectResult, invoiceResult] = await Promise.all([
         supabase.from('projects').select('id, name, service, status, brief, due_date, workspace_id, client_id, clients(name)').in('client_id', clientIds).eq('share_with_client', true).order('updated_at', { ascending: false }),
-        supabase.from('invoices').select('id, workspace_id, client_id, shared_with_client, number, amount, currency, status, due_date, created_at, clients(name, company, email), invoice_items(id, description, quantity, unit_amount, sort_order), payments(id, amount, status, paid_at, receipts(receipt_number, issued_at))').in('client_id', clientIds).eq('shared_with_client', true).order('sort_order', { referencedTable: 'invoice_items', ascending: true }).order('created_at', { ascending: false }),
+        supabase.from('invoices').select('id, workspace_id, client_id, checkout_token, shared_with_client, number, amount, currency, status, due_date, created_at, clients(name, company, email), invoice_items(id, description, quantity, unit_amount, sort_order), payments(id, amount, status, paid_at, receipts(receipt_number, issued_at))').in('client_id', clientIds).eq('shared_with_client', true).order('sort_order', { referencedTable: 'invoice_items', ascending: true }).order('created_at', { ascending: false }),
       ])
       if (projectResult.error) setError(projectResult.error.message)
       if (invoiceResult.error) setError(invoiceResult.error.message)
@@ -2315,6 +2561,48 @@ function ClientPortal() {
       }
     }
     loadPortal()
+  }, [user?.id])
+  useEffect(() => {
+    if (!supabase || !user?.id) return undefined
+    let active = true
+    const refreshInvoices = async () => {
+      const { data: accessRows, error: accessError } = await supabase.from('client_access')
+        .select('client_id')
+        .eq('user_id', user.id)
+      if (accessError) {
+        if (active) setError(accessError.message)
+        return
+      }
+      const clientIds = [...new Set((accessRows || []).map((access) => access.client_id).filter(Boolean))]
+      if (!clientIds.length) return
+      const { data, error: invoiceError } = await supabase.from('invoices')
+        .select('id, workspace_id, client_id, checkout_token, shared_with_client, number, amount, currency, status, due_date, created_at, clients(name, company, email), invoice_items(id, description, quantity, unit_amount, sort_order), payments(id, amount, status, paid_at, receipts(receipt_number, issued_at))')
+        .in('client_id', clientIds)
+        .eq('shared_with_client', true)
+        .order('sort_order', { referencedTable: 'invoice_items', ascending: true })
+        .order('created_at', { ascending: false })
+      if (invoiceError) {
+        if (active) setError(invoiceError.message)
+        return
+      }
+      if (active) setInvoices(data || [])
+    }
+    const channel = supabase.channel(`client-invoices:${user.id}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'invoices',
+      }, refreshInvoices)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'payments',
+      }, refreshInvoices)
+      .subscribe()
+    return () => {
+      active = false
+      supabase.removeChannel(channel)
+    }
   }, [user?.id])
   async function acceptInvite(token) {
     const { data, error: rpcError } = await supabase.rpc('accept_client_invitation', { invitation_token: token })
@@ -2376,16 +2664,19 @@ function ClientPortal() {
           <FileText />
           <div className="record-main">
             <b>Invoice #{invoice.number}</b>
-            <span>{money(Number(invoice.amount))} · {invoice.status}</span>
+            <span>{money(Number(invoice.amount))} · {invoice.status} · {money(invoicePaid(invoice))} paid · {money(invoiceBalance(invoice))} remaining</span>
             {asRows(invoice.invoice_items).map((item) => <small key={item.id || `${item.description}-${item.sort_order}`}>{item.description} · {Number(item.quantity)} × {money(Number(item.unit_amount))} = {money(Number(item.quantity) * Number(item.unit_amount))}</small>)}
             {receiptRows.map((receipt) => <small key={receipt.receipt_number}>Receipt {receipt.receipt_number} · {new Date(receipt.issued_at).toLocaleDateString()}</small>)}
           </div>
           <button className="button button-soft" onClick={() => setPrintInvoice(invoice)}>Print invoice</button>
           {receiptRows.map((receipt) => <button className="button button-soft" key={receipt.receipt_number} onClick={() => setPrintInvoice({ ...invoice, receipt, receiptAudience: 'client' })}>Print payment confirmation</button>)}
-          {invoice.status !== 'paid' && <button className="button button-yellow" onClick={() => setPayInvoice({ invoice, workspace: workspacePaymentDetails[invoice.id] })}>Pay invoice <ArrowRight size={15} /></button>}
+          {['open', 'overdue'].includes(invoice.status) && invoiceBalance(invoice) > 0 && <>
+            {invoice.checkout_token && <Link className="button button-yellow" to={`/pay/${invoice.checkout_token}`}>Pay online <ArrowRight size={15} /></Link>}
+            <button className="button button-soft" onClick={() => setPayInvoice({ invoice, workspace: workspacePaymentDetails[invoice.id] })}>Bank transfer details</button>
+          </>}
         </article>
       })}</div> : <p className="empty-copy">No invoices have been shared with you yet.</p>}
-      <p className="config-note">Manual bank transfer is the current payment method. Confirm the transfer and the studio will issue a matching receipt once it is verified.</p>
+      <p className="config-note">Bachs confirms online payments automatically and issues a receipt for each payment. Your studio can also record a verified manual bank transfer.</p>
     </main>
     <SiteFooter />
     {payInvoice && <Modal title={`Pay ${payInvoice.invoice.number}`} onClose={() => setPayInvoice(null)}><div className="print-document"><p className="kicker">TRANSFER DETAILS</p><p>Transfer {money(Number(payInvoice.invoice.amount))} to the studio account below. Include invoice {payInvoice.invoice.number} as the transfer reference.</p>{payInvoice.workspace?.payment_bank_name ? <><div className="portal-payment-instructions"><b>Bank</b><span>{payInvoice.workspace.payment_bank_name}</span></div><div className="portal-payment-instructions"><b>Account name</b><span>{payInvoice.workspace.payment_account_name || 'Not provided'}</span></div><div className="portal-payment-instructions"><b>Account number</b><span>{payInvoice.workspace.payment_account_number || 'Not provided'}</span></div>{payInvoice.workspace.payment_reference_note && <div className="portal-payment-instructions"><b>Reference note</b><span>{payInvoice.workspace.payment_reference_note}</span></div>}{payInvoice.workspace.payment_note && <div className="portal-payment-instructions"><b>Additional instructions</b><span>{payInvoice.workspace.payment_note}</span></div>}</> : <p className="notice-error">The studio has not added bank transfer details yet. Please message the studio from your project conversation.</p>}<button className="button button-dark" type="button" onClick={() => setPayInvoice(null)}>Close</button></div></Modal>}
@@ -2596,6 +2887,28 @@ function asRows(value) {
   return Array.isArray(value) ? value.filter(Boolean) : [value]
 }
 
+function invoicePaid(invoice) {
+  return asRows(invoice?.payments)
+    .filter((payment) => payment.status === 'succeeded')
+    .reduce((sum, payment) => sum + Number(payment.amount), 0)
+}
+
+function invoiceBalance(invoice) {
+  return Math.max(Number(invoice?.amount || 0) - invoicePaid(invoice), 0)
+}
+
+async function edgeFunctionError(error, fallback) {
+  if (error?.context && typeof error.context.clone === 'function') {
+    try {
+      const body = await error.context.clone().json()
+      if (typeof body?.error === 'string') return body.error
+    } catch {
+      return error.message || fallback
+    }
+  }
+  return error?.message || fallback
+}
+
 function App() {
   return <BrowserRouter basename={appBasePath || undefined} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><AuthProvider><PublicStudioProvider><Routes>
     <Route path="/" element={<PublicHome />} />
@@ -2604,6 +2917,7 @@ function App() {
     <Route path="/contact" element={<Contact />} />
     <Route path="/sign-in" element={<AuthPage />} />
     <Route path="/create-account" element={<AuthPage signup />} />
+    <Route path="/pay/:token" element={<PublicInvoiceCheckout />} />
     <Route path="/studio/*" element={<ProtectedRoute><StudioAccessRoute /></ProtectedRoute>} />
     <Route path="/portal" element={<ProtectedRoute><ClientPortal /></ProtectedRoute>} />
     <Route path="/portal/project/:id" element={<ProtectedRoute><ClientProject /></ProtectedRoute>} />

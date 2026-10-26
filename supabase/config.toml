@@ -2,3 +2,9 @@ project_id = "glyph-studio"
 
 [auth.email]
 enable_confirmations = false
+
+[functions.bachs-checkout]
+verify_jwt = false
+
+[functions.bachs-webhook]
+verify_jwt = false
