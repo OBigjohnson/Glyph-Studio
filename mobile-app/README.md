@@ -5,6 +5,8 @@ workspace. It opens `https://glyphstudio.cv/studio` in a native WebView and
 uses the website's existing Supabase sign-in and authorization. It is not a
 second copy or a native rewrite of the Vite website. Internet access is
 required, and the same studio account and workspace permissions apply.
+The GLYPH brand artwork is configured for the home-screen icon, including
+Android's adaptive launcher and themed monochrome icon.
 
 The app allows navigation only to the studio and its sign-in/account-creation
 routes on `glyphstudio.cv`. Public portfolio routes are not opened inside the
@@ -43,7 +45,8 @@ The EAS project is linked to `@obigjohnson/glyph-studio-mobile`.
    npx eas-cli@latest build --platform android --profile production
    ```
 
-The Android application ID is `com.glyphstudio.studio`. If that ID is already
+The Android application ID is `com.glyphstudio.studio`. The Android version
+code is incremented with each distributable update. If that application ID is already
 registered to another Play Store app, change `expo.android.package` in
 `app.json` before the first production build. Do not put Bachs, Supabase
 service-role, or other server secrets in this app; the existing website and
