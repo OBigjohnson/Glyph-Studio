@@ -510,10 +510,18 @@ function isPortalInvitation(path) {
 function StudioShell() {
   const { profile, user, signOut } = useAuth()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [moreOpen, setMoreOpen] = useState(false)
   const [notificationError, setNotificationError] = useState('')
   const [newRequestCount, setNewRequestCount] = useState(0)
   const unreadMessages = useUnreadProjectMessages(user?.id, setNotificationError)
   const location = useLocation()
+  const [isMobileStudioApp] = useState(() => {
+    if (new URLSearchParams(window.location.search).get('app') === 'mobile') {
+      window.sessionStorage.setItem('glyph-studio-mobile-app', 'true')
+      return true
+    }
+    return window.sessionStorage.getItem('glyph-studio-mobile-app') === 'true'
+  })
   useEffect(() => {
     if (!supabase || !user?.id) return undefined
     let active = true
@@ -554,7 +562,97 @@ function StudioShell() {
     ['/studio', 'Overview', Sparkles], ['/studio/search', 'Search', Search], ['/studio/clients', 'Clients', Users], ['/studio/projects', 'Projects', FolderKanban],
     ['/studio/portfolio', 'Portfolio', Palette], ['/studio/calendar', 'Calendar', CalendarDays], ['/studio/requests', 'Requests', MessageCircle], ['/studio/finance', 'Invoices', FileText], ['/studio/settings', 'Settings', Settings2],
   ]
-  return <UnreadProjectMessagesContext.Provider value={{ counts: unreadMessages.counts, markRead: unreadMessages.markRead }}><div className="studio-shell"><aside className={menuOpen ? 'studio-sidebar sidebar-open' : 'studio-sidebar'}><div className="sidebar-brand"><Brand /><button className="mobile-toggle" onClick={() => setMenuOpen(false)}><X /></button></div><p className="kicker sidebar-label">YOUR WORKSPACE</p><nav>{tabs.map(([to, label, Icon]) => <Link onClick={() => setMenuOpen(false)} className={`side-link ${location.pathname === to ? 'side-active' : ''}`} key={to} to={to}><Icon size={17} /><span>{label}</span>{label === 'Projects' && unreadMessages.total > 0 && <small className="unread-badge" aria-label={`${unreadMessages.total} unread project messages`}>{unreadMessages.total > 99 ? '99+' : unreadMessages.total}</small>}{label === 'Requests' && newRequestCount > 0 && <small className="unread-badge" aria-label={`${newRequestCount} new project requests`}>{newRequestCount > 99 ? '99+' : newRequestCount}</small>}</Link>)}</nav><div className="sidebar-bottom"><Link className="public-link" to="/"><ExternalLink size={15} /> View public portfolio</Link><div className="account-row"><CircleUserRound size={21} /><span><b>{profile?.full_name || user?.email?.split('@')[0] || 'Studio owner'}</b><small>{user?.email}</small></span><button aria-label="Sign out" onClick={signOut}><LogOut size={16} /></button></div></div></aside><button className="studio-menu mobile-toggle" onClick={() => setMenuOpen(true)} aria-label="Open studio navigation"><Menu /></button><section className="studio-content"><header className="studio-topbar"><div><span className="studio-topbar-label">GLYPH / WORKSPACE</span><b>{profile?.full_name ? `Welcome back, ${profile.full_name.split(' ')[0]}` : 'Your creative workspace'}</b></div><div className="studio-topbar-actions"><Link to="/studio/search" aria-label="Search clients, projects, notes and tasks"><Search size={17} /><span>Search your studio…</span><kbd>⌘ K</kbd></Link><Link className="studio-topbar-public" to="/"><ExternalLink size={15} /> View portfolio</Link></div></header>{notificationError && <p className="notice-error">{notificationError}</p>}<Routes><Route index element={<StudioOverview />} /><Route path="search" element={<StudioSearch />} /><Route path="requests" element={<ProjectRequests />} /><Route path="clients" element={<Clients />} /><Route path="clients/:id" element={<ClientDetail />} /><Route path="projects" element={<Projects />} /><Route path="projects/:id" element={<ProjectRoom />} /><Route path="portfolio" element={<PortfolioAdmin />} /><Route path="calendar" element={<ContentCalendar />} /><Route path="finance" element={<Finance />} /><Route path="settings" element={<StudioSettings />} /><Route path="*" element={<Navigate to="/studio" replace />} /></Routes></section></div></UnreadProjectMessagesContext.Provider>
+  const mobileTabs = [
+    ['/studio', 'Studio', Sparkles],
+    ['/studio/projects', 'Projects', FolderKanban],
+    ['/studio/clients', 'Clients', Users],
+    ['/studio/finance', 'Finance', FileText],
+    ['/studio/calendar', 'Calendar', CalendarDays],
+  ]
+  const mobileTools = [
+    ['/studio/search', 'Search your studio', Search],
+    ['/studio/requests', 'Project requests', MessageCircle],
+    ['/studio/portfolio', 'Portfolio', Palette],
+    ['/studio/settings', 'Settings', Settings2],
+  ]
+  const mobileTabActive = (path) => path === '/studio'
+    ? location.pathname === path
+    : location.pathname === path || location.pathname.startsWith(`${path}/`)
+  const avatarInitial = profile?.full_name?.trim().charAt(0).toUpperCase()
+    || user?.email?.charAt(0).toUpperCase()
+    || 'G'
+
+  return (
+    <UnreadProjectMessagesContext.Provider value={{ counts: unreadMessages.counts, markRead: unreadMessages.markRead }}>
+      <div className={`studio-shell${isMobileStudioApp ? ' mobile-app-mode' : ''}`}>
+        {isMobileStudioApp && (
+          <>
+            <header className="mobile-studio-header">
+              <div className="mobile-studio-brand">
+                <img src={publicAsset('assets/glyph-logo.jpg')} alt="" />
+                <span><b>GLYPH</b><small>CREATIVE STUDIO</small></span>
+              </div>
+              <button
+                className="mobile-studio-more-button"
+                aria-label={moreOpen ? 'Close studio tools' : 'Open studio tools'}
+                aria-expanded={moreOpen}
+                onClick={() => setMoreOpen((open) => !open)}
+              >
+                {moreOpen ? <X size={19} /> : <span>{avatarInitial}</span>}
+              </button>
+            </header>
+            {moreOpen && (
+              <>
+                <button
+                  className="mobile-studio-more-scrim"
+                  aria-label="Close studio tools"
+                  onClick={() => setMoreOpen(false)}
+                />
+                <section className="mobile-studio-tools" aria-label="More studio tools">
+                  <p className="kicker">YOUR WORKSPACE</p>
+                  {mobileTools.map(([to, label, Icon]) => (
+                    <Link key={to} to={to} onClick={() => setMoreOpen(false)}>
+                      <Icon size={17} /><span>{label}</span><ArrowRight size={15} />
+                    </Link>
+                  ))}
+                  <button onClick={signOut}><LogOut size={17} /><span>Sign out</span></button>
+                </section>
+              </>
+            )}
+            <nav className="mobile-studio-tabbar" aria-label="Studio navigation">
+              {mobileTabs.map(([to, label, Icon]) => (
+                <Link
+                  key={to}
+                  to={to}
+                  onClick={() => setMoreOpen(false)}
+                  className={mobileTabActive(to) ? 'mobile-studio-tab active' : 'mobile-studio-tab'}
+                  aria-current={mobileTabActive(to) ? 'page' : undefined}
+                >
+                  <Icon size={19} strokeWidth={mobileTabActive(to) ? 2 : 1.7} />
+                  <span>{label}</span>
+                </Link>
+              ))}
+            </nav>
+          </>
+        )}
+        <aside className={menuOpen ? 'studio-sidebar sidebar-open' : 'studio-sidebar'}>
+          <div className="sidebar-brand"><Brand /><button className="mobile-toggle" onClick={() => setMenuOpen(false)}><X /></button></div>
+          <p className="kicker sidebar-label">YOUR WORKSPACE</p>
+          <nav>{tabs.map(([to, label, Icon]) => <Link onClick={() => setMenuOpen(false)} className={`side-link ${location.pathname === to ? 'side-active' : ''}`} key={to} to={to}><Icon size={17} /><span>{label}</span>{label === 'Projects' && unreadMessages.total > 0 && <small className="unread-badge" aria-label={`${unreadMessages.total} unread project messages`}>{unreadMessages.total > 99 ? '99+' : unreadMessages.total}</small>}{label === 'Requests' && newRequestCount > 0 && <small className="unread-badge" aria-label={`${newRequestCount} new project requests`}>{newRequestCount > 99 ? '99+' : newRequestCount}</small>}</Link>)}</nav>
+          <div className="sidebar-bottom">{!isMobileStudioApp && <Link className="public-link" to="/"><ExternalLink size={15} /> View public portfolio</Link>}<div className="account-row"><CircleUserRound size={21} /><span><b>{profile?.full_name || user?.email?.split('@')[0] || 'Studio owner'}</b><small>{user?.email}</small></span><button aria-label="Sign out" onClick={signOut}><LogOut size={16} /></button></div></div>
+        </aside>
+        <button className="studio-menu mobile-toggle" onClick={() => setMenuOpen(true)} aria-label="Open studio navigation"><Menu /></button>
+        <section className="studio-content">
+          <header className="studio-topbar">
+            <div><span className="studio-topbar-label">GLYPH / WORKSPACE</span><b>{profile?.full_name ? `Welcome back, ${profile.full_name.split(' ')[0]}` : 'Your creative workspace'}</b></div>
+            <div className="studio-topbar-actions"><Link to="/studio/search" aria-label="Search clients, projects, notes and tasks"><Search size={17} /><span>Search your studio…</span><kbd>⌘ K</kbd></Link>{!isMobileStudioApp && <Link className="studio-topbar-public" to="/"><ExternalLink size={15} /> View portfolio</Link>}</div>
+          </header>
+          {notificationError && <p className="notice-error">{notificationError}</p>}
+          <Routes><Route index element={<StudioOverview />} /><Route path="search" element={<StudioSearch />} /><Route path="requests" element={<ProjectRequests />} /><Route path="clients" element={<Clients />} /><Route path="clients/:id" element={<ClientDetail />} /><Route path="projects" element={<Projects />} /><Route path="projects/:id" element={<ProjectRoom />} /><Route path="portfolio" element={<PortfolioAdmin />} /><Route path="calendar" element={<ContentCalendar />} /><Route path="finance" element={<Finance />} /><Route path="settings" element={<StudioSettings />} /><Route path="*" element={<Navigate to="/studio" replace />} /></Routes>
+        </section>
+      </div>
+    </UnreadProjectMessagesContext.Provider>
+  )
 }
 
 function StudioAccessRoute() {
@@ -2909,8 +3007,24 @@ async function edgeFunctionError(error, fallback) {
   return error?.message || fallback
 }
 
+function MobileStudioTheme() {
+  const location = useLocation()
+  useEffect(() => {
+    const from = typeof location.state?.from === 'string'
+      ? new URL(location.state.from, window.location.origin)
+      : null
+    const requestedByRoute = new URLSearchParams(location.search).get('app') === 'mobile'
+    const requestedByRedirect = from?.searchParams.get('app') === 'mobile'
+    const mobileMode = requestedByRoute || requestedByRedirect
+      || window.sessionStorage.getItem('glyph-studio-mobile-app') === 'true'
+    if (mobileMode) window.sessionStorage.setItem('glyph-studio-mobile-app', 'true')
+    document.documentElement.classList.toggle('mobile-studio-theme', mobileMode)
+  }, [location.pathname, location.search, location.state])
+  return null
+}
+
 function App() {
-  return <BrowserRouter basename={appBasePath || undefined} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><AuthProvider><PublicStudioProvider><Routes>
+  return <BrowserRouter basename={appBasePath || undefined} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><MobileStudioTheme /><AuthProvider><PublicStudioProvider><Routes>
     <Route path="/" element={<PublicHome />} />
     <Route path="/portfolio" element={<Portfolio />} />
     <Route path="/portfolio/:slug" element={<PortfolioDetail />} />

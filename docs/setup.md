@@ -27,6 +27,15 @@ Without both variables, public pages still render but Supabase-backed actions
 show a setup error. Studio and Portal routes require a real authenticated
 Supabase session; there is no demo login or mock business data.
 
+## Android Studio app
+
+The separate Expo project in [`mobile-app/`](../mobile-app/) builds an
+installable Android app that opens the private `/studio` workspace. It uses
+the existing website authentication and requires an internet connection; it
+does not duplicate the website or expose server credentials. See its
+[build instructions](../mobile-app/README.md) to link an Expo account and
+create an EAS APK.
+
 ## Auth
 
 Enable the email provider in **Authentication → Providers**. Configure the site

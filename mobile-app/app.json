@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "GLYPH Studio",
+    "slug": "glyph-studio-mobile",
+    "description": "Private mobile access to the GLYPH Studio workspace.",
+    "scheme": "glyphstudio",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/glyph-logo.png",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.glyphstudio.studio",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "backgroundColor": "#3048dc",
+        "foregroundImage": "./assets/glyph-logo.png"
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "e2e85785-e6ad-4931-a5ab-1e4a4b9ba306"
+      }
+    },
+    "owner": "obigjohnson"
+  }
+}
