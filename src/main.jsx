@@ -9,6 +9,19 @@ import './styles.css'
 
 const services = ['Brand identity', 'Logo design', 'Graphic design', 'UI/UX', 'Mobile App Development', 'Web Development', 'Video editing', 'Videography', 'Photography']
 const portfolioSegments = ['Design', 'Branding', 'Graphic Design', 'UI/UX', 'Mobile App Development', 'Web Development', 'Video Editing', 'Videography', 'Photography']
+const portfolioFileMimeTypes = new Set([
+  'image/jpeg',
+  'image/png',
+  'application/pdf',
+  'video/mp4',
+  'video/quicktime',
+  'video/webm',
+  'video/x-msvideo',
+  'video/mpeg',
+  'video/3gpp',
+  'video/x-m4v',
+])
+const portfolioFileSizeLimit = 50 * 1024 * 1024
 const studioOwnerEmail = 'specificvisuals09@gmail.com'
 const appBasePath = import.meta.env.BASE_URL.replace(/\/$/, '')
 const PublicStudioContext = createContext({ studio: null, error: '', refreshStudio: async () => {} })
@@ -302,6 +315,7 @@ function PortfolioDetail() {
     <h1>{item.title}</h1>
     {error && <p className="notice-error">{error}</p>}
     {assets.filter((asset) => asset.mime_type.startsWith('image/')).map((asset) => <img className="case-asset-image" key={asset.id} src={asset.url} alt={item.title} loading="lazy" />)}
+    {assets.filter((asset) => asset.mime_type.startsWith('video/')).map((asset) => <video className="case-asset-video" key={asset.id} src={asset.url} controls playsInline preload="metadata">{asset.file_name}</video>)}
     {item.cover_url && !assets.some((asset) => asset.storage_path === item.cover_path) && <div className="case-cover" style={{ backgroundImage: `url("${item.cover_url}")` }} />}
     <div className="case-copy"><p className="kicker">THE STORY</p><p>{item.summary}</p></div>
     {assets.filter((asset) => asset.mime_type === 'application/pdf').map((asset) => <a className="button button-soft" key={asset.id} href={asset.url} target="_blank" rel="noreferrer">{asset.file_name} <ExternalLink size={15} /></a>)}<Link className="button button-dark" to="/contact">Have a project in mind? <ArrowRight size={16} /></Link></main><SiteFooter /></div>
@@ -1238,6 +1252,7 @@ function PortfolioAdmin() {
   const [publishingItem, setPublishingItem] = useState(null)
   const [saving, setSaving] = useState(false)
   const [selectedFiles, setSelectedFiles] = useState([])
+  const [storyFiles, setStoryFiles] = useState([])
   const [importSegment, setImportSegment] = useState(portfolioSegments[0])
   const [importProgress, setImportProgress] = useState(null)
   const [importSummary, setImportSummary] = useState('')
@@ -1254,14 +1269,90 @@ function PortfolioAdmin() {
 
   function fileDetails(file) {
     const extension = file.name.split('.').pop()?.toLowerCase()
-    const mimeType = extension === 'jpg' || extension === 'jpeg'
-      ? 'image/jpeg'
-      : extension === 'png'
-        ? 'image/png'
-        : extension === 'pdf'
-          ? 'application/pdf'
-          : ''
+    const extensionMimeTypes = {
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      png: 'image/png',
+      pdf: 'application/pdf',
+      mp4: 'video/mp4',
+      m4v: 'video/x-m4v',
+      mov: 'video/quicktime',
+      webm: 'video/webm',
+      avi: 'video/x-msvideo',
+      mpeg: 'video/mpeg',
+      mpg: 'video/mpeg',
+      '3gp': 'video/3gpp',
+    }
+    const mimeType = portfolioFileMimeTypes.has(file.type) ? file.type : extensionMimeTypes[extension] || ''
     return { mimeType, title: file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim() }
+  }
+
+  function validatePortfolioFiles(files) {
+    const invalid = files.filter((file) => {
+      const { mimeType } = fileDetails(file)
+      return !portfolioFileMimeTypes.has(mimeType) || file.size <= 0 || file.size > portfolioFileSizeLimit
+    })
+    if (!invalid.length) return ''
+    return `${invalid.length} file(s) are unsupported or over the 50 MB per-file limit. Use JPG, PNG, PDF, MP4, MOV, WebM, AVI, MPEG, or 3GP files.`
+  }
+
+  async function removePortfolioFiles(paths) {
+    if (!paths.length) return ''
+    try {
+      const { error: cleanupError } = await supabase.storage.from('portfolio-media').remove(paths)
+      return cleanupError?.message || ''
+    } catch (cleanupError) {
+      return cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
+    }
+  }
+
+  async function uploadPortfolioAssets(files) {
+    const uploaded = []
+    const attemptedPaths = []
+    try {
+      for (const [index, file] of files.entries()) {
+        const { mimeType } = fileDetails(file)
+        const safeName = file.name.replace(/[\\/?#%:*|"<>]/g, '-').replace(/\s+/g, '-')
+        const storagePath = `${workspace.id}/${crypto.randomUUID()}-${safeName}`
+        attemptedPaths.push(storagePath)
+        const upload = await uploadPortfolioFile(storagePath, file, mimeType)
+        if (upload.error) {
+          const cleanupError = await removePortfolioFiles(attemptedPaths)
+          return {
+            data: [],
+            error: new Error(`${file.name}: ${upload.error.message}${cleanupError ? ` Uploaded-file cleanup also failed: ${cleanupError}` : ''}`),
+          }
+        }
+        uploaded.push({ file, mime_type: mimeType, storage_path: storagePath, file_size: file.size, sort_order: index })
+      }
+    } catch (uploadError) {
+      const cleanupError = await removePortfolioFiles(attemptedPaths)
+      const message = uploadError instanceof Error ? uploadError.message : String(uploadError)
+      return {
+        data: [],
+        error: new Error(`Portfolio upload failed: ${message}${cleanupError ? ` Uploaded-file cleanup also failed: ${cleanupError}` : ''}`),
+      }
+    }
+    return { data: uploaded, error: null }
+  }
+
+  async function insertPortfolioAssets(itemId, uploaded) {
+    if (!uploaded.length) return { error: null }
+    const result = await supabase.from('portfolio_assets').insert(uploaded.map((asset) => ({
+      workspace_id: workspace.id,
+      portfolio_item_id: itemId,
+      storage_path: asset.storage_path,
+      file_name: asset.file.name,
+      mime_type: asset.mime_type,
+      file_size: asset.file_size,
+      sort_order: asset.sort_order,
+      created_by: user.id,
+    })))
+    if (!result.error) return { error: null }
+    const cleanupError = await removePortfolioFiles(uploaded.map((asset) => asset.storage_path))
+    return {
+      error: new Error(`${result.error.message}${cleanupError ? ` Uploaded-file cleanup also failed: ${cleanupError}` : ''}`),
+    }
   }
 
   async function refreshItems() {
@@ -1283,24 +1374,25 @@ function PortfolioAdmin() {
     event.preventDefault()
     if (!supabase || !workspace || !user) return
     setSaving(true)
-    const form = Object.fromEntries(new FormData(event.currentTarget))
-    const title = String(form.title).trim()
-    const file = form.cover_image
-    let coverPath = null
-    if (file instanceof File && file.size > 0) {
-      if (!['image/jpeg', 'image/png'].includes(file.type) || file.size > 50 * 1024 * 1024) {
-        setError('Choose a JPG or PNG cover image smaller than 50 MB.')
-        setSaving(false)
-        return
-      }
-      coverPath = `${workspace.id}/${crypto.randomUUID()}.${file.type.split('/')[1]}`
-      const upload = await uploadPortfolioFile(coverPath, file, file.type)
-      if (upload.error) {
-        setError(upload.error.message)
-        setSaving(false)
-        return
-      }
+    setError('')
+    const formData = new FormData(event.currentTarget)
+    const form = Object.fromEntries(formData)
+    const files = formData.getAll('portfolio_files').filter((file) => file instanceof File && file.size > 0)
+    const validationError = validatePortfolioFiles(files)
+    if (validationError) {
+      setError(validationError)
+      setSaving(false)
+      return
     }
+    const title = String(form.title).trim()
+    const uploadResult = await uploadPortfolioAssets(files)
+    if (uploadResult.error) {
+      setError(uploadResult.error.message)
+      setSaving(false)
+      return
+    }
+    const uploaded = uploadResult.data
+    const coverPath = uploaded.find((asset) => asset.mime_type.startsWith('image/'))?.storage_path || null
     const result = await supabase.from('portfolio_items').insert({
       workspace_id: workspace.id,
       title,
@@ -1308,36 +1400,32 @@ function PortfolioAdmin() {
       service: String(form.service),
       summary: String(form.summary).trim(),
       slug: String(form.slug || title).toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+      cover_path: coverPath,
     }).select().single()
-    if (result.error && coverPath) {
-      const cleanup = await supabase.storage.from('portfolio-media').remove([coverPath])
-      if (cleanup.error) setError(`${result.error.message}. Could not clean up the uploaded cover: ${cleanup.error.message}`)
+    if (result.error) {
+      const cleanup = uploaded.length
+        ? await supabase.storage.from('portfolio-media').remove(uploaded.map((asset) => asset.storage_path))
+        : { error: null }
+      setError(cleanup.error
+        ? `${result.error.message}. Could not clean up uploaded files: ${cleanup.error.message}`
+        : result.error.message)
+      setSaving(false)
+      return
     }
+    const assetResult = await insertPortfolioAssets(result.data.id, uploaded)
+    if (assetResult.error) {
+      const cleanup = await supabase.from('portfolio_items').delete().eq('id', result.data.id).eq('workspace_id', workspace.id)
+      setError(`${assetResult.error.message}${cleanup.error ? ` The empty portfolio entry could not be removed: ${cleanup.error.message}` : ''}`)
+      setSaving(false)
+      await refreshItems()
+      return
+    }
+    const signed = await attachPortfolioCovers([result.data])
+    if (signed.error) setError(signed.error.message)
+    setItems((current) => [signed.data[0], ...(current || [])])
+    setCreating(false)
+    setStoryFiles([])
     setSaving(false)
-    if (result.error) setError(result.error.message)
-    else {
-      if (coverPath) {
-        const asset = await supabase.from('portfolio_assets').insert({
-          workspace_id: workspace.id,
-          portfolio_item_id: result.data.id,
-          storage_path: coverPath,
-          file_name: file.name,
-          mime_type: file.type,
-          file_size: file.size,
-          created_by: user.id,
-        })
-        if (asset.error) {
-          setError(asset.error.message)
-          await refreshItems()
-          setCreating(false)
-          return
-        }
-      }
-      const signed = await attachPortfolioCovers([result.data])
-      if (signed.error) setError(signed.error.message)
-      setItems((current) => [signed.data[0], ...(current || [])])
-      setCreating(false)
-    }
   }
 
   async function importFolder(event) {
@@ -1346,10 +1434,10 @@ function PortfolioAdmin() {
     const files = selectedFiles
     const invalid = files.filter((file) => {
       const { mimeType } = fileDetails(file)
-      return !mimeType || file.size <= 0 || file.size > 50 * 1024 * 1024
+      return !portfolioFileMimeTypes.has(mimeType) || file.size <= 0 || file.size > portfolioFileSizeLimit
     })
     if (invalid.length) {
-      setError(`${invalid.length} selected file(s) are not supported or exceed the 50 MB per-file limit. Only JPG, PNG, and PDF files are accepted.`)
+      setError(`${invalid.length} selected file(s) are unsupported or over the 50 MB per-file limit. Use JPG, PNG, PDF, MP4, MOV, WebM, AVI, MPEG, or 3GP files.`)
       return
     }
     setSaving(true)
@@ -1362,9 +1450,19 @@ function PortfolioAdmin() {
       const { mimeType, title } = fileDetails(file)
       const pathName = file.name.replace(/[\\/?#%:*|"<>]/g, '-').replace(/\s+/g, '-')
       const storagePath = `${workspace.id}/${crypto.randomUUID()}-${pathName}`
-      const upload = await uploadPortfolioFile(storagePath, file, mimeType)
+      let upload
+      try {
+        upload = await uploadPortfolioFile(storagePath, file, mimeType)
+      } catch (uploadError) {
+        const cleanupError = await removePortfolioFiles([storagePath])
+        const message = uploadError instanceof Error ? uploadError.message : String(uploadError)
+        failures.push(`${file.name}: ${message}${cleanupError ? ` Cleanup also failed: ${cleanupError}` : ''}`)
+        setImportProgress({ done: index + 1, total: files.length, failed: failures.length })
+        continue
+      }
       if (upload.error) {
-        failures.push(`${file.name}: ${upload.error.message}`)
+        const cleanupError = await removePortfolioFiles([storagePath])
+        failures.push(`${file.name}: ${upload.error.message}${cleanupError ? ` Cleanup also failed: ${cleanupError}` : ''}`)
         setImportProgress({ done: index + 1, total: files.length, failed: failures.length })
         continue
       }
@@ -1465,7 +1563,16 @@ function PortfolioAdmin() {
     event.preventDefault()
     if (!supabase || !workspace || !editingItem) return
     setSaving(true)
-    const form = Object.fromEntries(new FormData(event.currentTarget))
+    setError('')
+    const formData = new FormData(event.currentTarget)
+    const form = Object.fromEntries(formData)
+    const files = formData.getAll('portfolio_files').filter((file) => file instanceof File && file.size > 0)
+    const validationError = validatePortfolioFiles(files)
+    if (validationError) {
+      setError(validationError)
+      setSaving(false)
+      return
+    }
     const title = String(form.title).trim()
     const slug = String(form.slug).trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
     if (!slug) {
@@ -1473,23 +1580,50 @@ function PortfolioAdmin() {
       setSaving(false)
       return
     }
+    const uploadResult = await uploadPortfolioAssets(files)
+    if (uploadResult.error) {
+      setError(uploadResult.error.message)
+      setSaving(false)
+      return
+    }
+    const uploaded = uploadResult.data
+    const newCoverPath = uploaded.find((asset) => asset.mime_type.startsWith('image/'))?.storage_path
     const result = await supabase.from('portfolio_items').update({
       title,
       slug,
       segment: String(form.segment),
       service: String(form.service),
       summary: String(form.summary).trim(),
+      cover_path: newCoverPath || editingItem.cover_path || null,
       updated_at: new Date().toISOString(),
     }).eq('id', editingItem.id).eq('workspace_id', workspace.id).select().single()
-    setSaving(false)
     if (result.error) {
-      setError(result.error.message)
+      const metadataCleanup = uploaded.length
+        ? await supabase.from('portfolio_assets').delete().eq('workspace_id', workspace.id).in('storage_path', uploaded.map((asset) => asset.storage_path))
+        : { error: null }
+      const fileCleanupError = await removePortfolioFiles(uploaded.map((asset) => asset.storage_path))
+      const cleanupErrors = [metadataCleanup.error?.message, fileCleanupError].filter(Boolean)
+      setError(`${result.error.message}${cleanupErrors.length ? `. Could not clean up uploaded files: ${cleanupErrors.join('; ')}` : ''}`)
+      setSaving(false)
+      return
+    }
+    const assetResult = await insertPortfolioAssets(editingItem.id, uploaded)
+    if (assetResult.error) {
+      const coverRestore = newCoverPath
+        ? await supabase.from('portfolio_items').update({ cover_path: editingItem.cover_path || null })
+          .eq('id', editingItem.id).eq('workspace_id', workspace.id)
+        : { error: null }
+      setError(`Portfolio details were saved, but the new files could not be attached: ${assetResult.error.message}${coverRestore.error ? ` The previous cover could not be restored: ${coverRestore.error.message}` : ''}`)
+      setSaving(false)
+      await refreshItems()
       return
     }
     const signed = await attachPortfolioCovers([result.data])
     if (signed.error) setError(signed.error.message)
     setItems((current) => current.map((item) => item.id === editingItem.id ? signed.data[0] : item))
     setEditingItem(null)
+    setStoryFiles([])
+    setSaving(false)
   }
 
   async function openPreview(item) {
@@ -1578,34 +1712,35 @@ function PortfolioAdmin() {
     <StudioPageHeader kicker="PUBLIC PRESENCE / PORTFOLIO" title="Your work,<br />out in the world." action={<div className="portfolio-actions">
       {groupIds.length >= 2 && <button className="button button-soft" onClick={() => setGroupForm(true)}>Group {groupIds.length} drafts</button>}
       <button className="button button-soft" disabled={!workspace} onClick={() => setImporting(true)}><FolderKanban size={15} /> Import folder</button>
-      <button className="button button-yellow" disabled={!workspace} onClick={() => setCreating(true)}><Plus size={16} /> Add a story</button>
+      <button className="button button-yellow" disabled={!workspace} onClick={() => { setStoryFiles([]); setCreating(true) }}><Plus size={16} /> Add a story</button>
     </div>} />
     {error && <p className="notice-error">{error}</p>}
     {importSummary && <p className="notice-success">{importSummary}</p>}
     {items === null ? <p className="loading-copy">Loading portfolio…</p> : items.length ? <>
-      <p className="muted-copy">Imported files stay private as drafts. Select related drafts to group their images and PDFs into one case study, then publish only work you want public.</p>
+      <p className="muted-copy">Upload files directly from this device, add project details, choose a segment, preview the work, then publish it when ready. Images, PDFs, and videos are supported.</p>
       <div className="record-list">{items.map((item) => <article className="record-row" key={item.id}>
         <input className="portfolio-select" type="checkbox" aria-label={`Select ${item.title}`} disabled={item.published} checked={groupIds.includes(item.id)} onChange={(event) => setGroupIds((current) => event.target.checked ? [...current, item.id] : current.filter((id) => id !== item.id))} />
         <div className="work-thumb" style={item.cover_url ? { backgroundImage: `url("${item.cover_url}")` } : undefined}>✳</div>
         <div className="record-main"><b>{item.title}</b><span>{item.segment} · {item.service || 'Add a skill'} · {item.published ? 'Public' : 'Private draft'}</span><small>{window.location.origin}{appPath(`/portfolio/${item.slug}`)}</small></div>
         <button className="button button-soft" onClick={() => openPreview(item)}>Preview</button>
-        <button className="button button-soft" onClick={() => setEditingItem(item)}>Edit</button>
+        <button className="button button-soft" onClick={() => { setStoryFiles([]); setEditingItem(item) }}>Edit</button>
         <button className="button button-soft" onClick={() => toggle(item)}>{item.published ? 'Unpublish' : 'Publish'}</button>
       </article>)}</div>
-    </> : <EmptyRecord title="Your work deserves a good story." text="Import your portfolio folder, then review drafts and publish only the work you want to share." onCreate={() => setImporting(true)} />}
-    {creating && <Modal title="Add portfolio story" onClose={() => setCreating(false)}><form onSubmit={save}>
+    </> : <EmptyRecord title="Your work deserves a good story." text="Upload a project from this device or import your existing portfolio folder. Add its details, preview the files, and publish it when ready." onCreate={() => { setStoryFiles([]); setCreating(true) }} />}
+    {creating && <Modal title="Add portfolio story" onClose={() => { if (!saving) { setCreating(false); setStoryFiles([]) } }}><form onSubmit={save}>
       <label>Project title<input name="title" required maxLength="180" /></label>
       <label>Public URL slug<input name="slug" placeholder="generated-from-title" maxLength="180" /></label>
       <label>Portfolio segment<select name="segment" defaultValue={portfolioSegments[0]}>{portfolioSegments.map((segment) => <option key={segment}>{segment}</option>)}</select></label>
       <label>Service<select name="service" defaultValue=""><option value="">Choose a service</option>{services.map((service) => <option key={service}>{service}</option>)}</select></label>
       <label>Project summary<textarea name="summary" rows="4" required maxLength="5000" /></label>
-      <label>Cover image<input name="cover_image" type="file" accept="image/jpeg,image/png" /></label>
-      <button className="button button-dark" disabled={saving}>{saving ? 'Saving…' : 'Save as draft'} <ArrowRight size={15} /></button>
+      <label>Project files (images, video, or PDF)<input name="portfolio_files" type="file" accept="image/jpeg,image/png,application/pdf,video/mp4,video/quicktime,video/webm,video/x-msvideo,video/mpeg,video/3gpp,video/x-m4v" multiple onChange={(event) => setStoryFiles(Array.from(event.target.files || []))} /><small className="muted-copy">Up to 50 MB per file. The first image selected becomes the portfolio cover. All uploads stay private until you publish.</small></label>
+      {storyFiles.length > 0 && <p className="muted-copy">{storyFiles.length} file(s) selected · {(storyFiles.reduce((sum, file) => sum + file.size, 0) / (1024 * 1024)).toFixed(1)} MB</p>}
+      <button className="button button-dark" disabled={saving}>{saving ? 'Uploading & saving…' : 'Save as draft'} <ArrowRight size={15} /></button>
     </form></Modal>}
     {importing && <Modal title="Import portfolio files" onClose={() => { if (!saving) { setImporting(false); setSelectedFiles([]) } }}><form onSubmit={importFolder}>
-      <p>Select your portfolio folder. Each JPG/PNG becomes a private draft with its filename as its starting title. PDFs are attached as downloadable portfolio files. Nothing is public until you publish it.</p>
+      <p>Select your portfolio folder. Each selected file becomes a private draft with its filename as the starting title. Nothing is public until you publish it.</p>
       <label>Portfolio segment<select value={importSegment} onChange={(event) => setImportSegment(event.target.value)}>{portfolioSegments.map((segment) => <option key={segment}>{segment}</option>)}</select></label>
-      <label>Portfolio folder<input type="file" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf" multiple webkitdirectory="true" onChange={(event) => setSelectedFiles(Array.from(event.target.files || []))} /></label>
+      <label>Portfolio folder<input type="file" accept=".jpg,.jpeg,.png,.pdf,.mp4,.mov,.webm,.avi,.mpeg,.mpg,.3gp,.m4v,image/jpeg,image/png,application/pdf,video/*" multiple webkitdirectory="true" onChange={(event) => setSelectedFiles(Array.from(event.target.files || []))} /></label>
       {selectedFiles.length > 0 && <p className="muted-copy">{selectedFiles.length} files selected · {(selectedFiles.reduce((sum, file) => sum + file.size, 0) / (1024 * 1024)).toFixed(1)} MB selected</p>}
       {importProgress && <p className="notice-success">Uploading {importProgress.done} of {importProgress.total} · {importProgress.failed} failed</p>}
       <button className="button button-dark" disabled={saving || !selectedFiles.length}>{saving ? 'Importing files…' : 'Upload selected files'} <ArrowRight size={15} /></button>
@@ -1618,20 +1753,24 @@ function PortfolioAdmin() {
       <label>Project story<textarea name="summary" rows="4" required maxLength="5000" /></label>
       <button className="button button-dark" disabled={saving}>{saving ? 'Grouping files…' : 'Create case study'} <ArrowRight size={15} /></button>
     </form></Modal>}
-    {editingItem && <Modal title="Edit portfolio story" onClose={() => { if (!saving) setEditingItem(null) }}><form onSubmit={updatePortfolioItem}>
+    {editingItem && <Modal title="Edit portfolio story" onClose={() => { if (!saving) { setStoryFiles([]); setEditingItem(null) } }}><form onSubmit={updatePortfolioItem}>
       <label>Project title<input name="title" required maxLength="180" defaultValue={editingItem.title} /></label>
       <label>Public URL slug<input name="slug" required maxLength="180" defaultValue={editingItem.slug} /></label>
       <label>Portfolio segment<select name="segment" defaultValue={editingItem.segment}>{portfolioSegments.map((segment) => <option key={segment}>{segment}</option>)}</select></label>
       <label>Service<select name="service" defaultValue={editingItem.service}><option value="">Choose a service</option>{services.map((service) => <option key={service}>{service}</option>)}</select></label>
       <label>Project story<textarea name="summary" rows="5" required maxLength="5000" defaultValue={editingItem.summary} /></label>
-      <button className="button button-dark" disabled={saving}>{saving ? 'Saving…' : 'Save story'} <ArrowRight size={15} /></button>
+      <label>Add files (images, video, or PDF)<input name="portfolio_files" type="file" accept="image/jpeg,image/png,application/pdf,video/mp4,video/quicktime,video/webm,video/x-msvideo,video/mpeg,video/3gpp,video/x-m4v" multiple onChange={(event) => setStoryFiles(Array.from(event.target.files || []))} /><small className="muted-copy">Up to 50 MB per file. New files are added to this story; existing files are kept.</small></label>
+      {storyFiles.length > 0 && <p className="muted-copy">{storyFiles.length} new file(s) selected · {(storyFiles.reduce((sum, file) => sum + file.size, 0) / (1024 * 1024)).toFixed(1)} MB</p>}
+      <button className="button button-dark" disabled={saving}>{saving ? 'Uploading & saving…' : 'Save story'} <ArrowRight size={15} /></button>
     </form></Modal>}
     {previewItem && <Modal title={`Preview: ${previewItem.title}`} onClose={() => { setPreviewItem(null); setPreviewAssets(null) }}>
       <p className="muted-copy">{previewItem.segment} · {previewItem.service || 'Portfolio work'} · {previewItem.published ? 'Currently public' : 'Private draft'}</p>
       {previewAssets === null ? <p className="loading-copy">Loading your files…</p> : previewAssets.length ? <div className="portfolio-preview-assets">
         {previewAssets.map((asset) => asset.mime_type.startsWith('image/')
           ? <figure key={asset.id}><img src={asset.url} alt={asset.file_name} /><figcaption>{asset.file_name}</figcaption></figure>
-          : <figure key={asset.id}><iframe title={asset.file_name} src={asset.url} /><figcaption><a href={asset.url} target="_blank" rel="noreferrer">{asset.file_name} <ExternalLink size={14} /></a></figcaption></figure>)}
+          : asset.mime_type.startsWith('video/')
+            ? <figure key={asset.id}><video src={asset.url} controls playsInline preload="metadata">{asset.file_name}</video><figcaption>{asset.file_name}</figcaption></figure>
+            : <figure key={asset.id}><iframe title={asset.file_name} src={asset.url} /><figcaption><a href={asset.url} target="_blank" rel="noreferrer">{asset.file_name} <ExternalLink size={14} /></a></figcaption></figure>)}
       </div> : <div className="portfolio-preview-empty"><p>No uploaded files are attached to this story yet.</p>{previewItem.cover_url && <img src={previewItem.cover_url} alt={previewItem.title} />}</div>}
     </Modal>}
     {publishingItem && <Modal title={`Publish: ${publishingItem.title}`} onClose={() => setPublishingItem(null)}><form onSubmit={publishItem}>

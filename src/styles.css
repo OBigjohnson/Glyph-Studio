@@ -338,12 +338,15 @@ input:focus,textarea:focus,select:focus{border-color:var(--blue);box-shadow:0 0 
 .portfolio-preview-assets{display:grid;gap:18px}
 .portfolio-preview-assets figure{margin:0;overflow:hidden;border:1px solid var(--line);background:#f0eee9}
 .portfolio-preview-assets img{width:100%;max-height:65vh;object-fit:contain}
+.portfolio-preview-assets video,.case-asset-video{display:block;width:100%;max-height:75vh;background:#101114}
+.portfolio-preview-assets video{max-height:65vh}
 .portfolio-preview-assets iframe{display:block;width:100%;height:min(65vh,700px);border:0;background:#fff}
 .portfolio-preview-assets figcaption{padding:9px 12px;font-size:11px;color:var(--muted);overflow-wrap:anywhere}
 .portfolio-preview-assets figcaption a{display:inline-flex;align-items:center;gap:7px}
 .portfolio-preview-empty{text-align:center;color:var(--muted)}
 .portfolio-preview-empty img{max-height:60vh;margin:16px auto;object-fit:contain}
 .case-asset-image{display:block;width:100%;height:auto;max-height:850px;object-fit:contain;background:#f0eee9;margin:18px 0}
+.case-asset-video{margin:18px 0;border-radius:12px}
 .public-site{--blue:var(--studio-blue,#2946d8)}
 .settings-brand-form{grid-column:1/-1}
 .app-root{min-height:100vh}

@@ -21,6 +21,12 @@ opens the generator directly. AI generation uses the same authenticated
 Supabase Edge Function and workspace preferences as the website; no Gemini or
 Supabase server secrets are stored in the mobile app.
 
+The mobile Portfolio page can upload images, PDFs, and supported videos from
+the phone's file picker. The WebView already supports single- and multi-file
+selection; portfolio upload and preview changes are served by the website, so
+they become available in the installed app after the website deployment without
+requiring a new native build.
+
 Receipts and invoices can be downloaded as PDFs from their preview. Android
 lets you choose a folder (including Downloads); iOS opens the system share
 sheet for saving or sending the PDF. The native PDF handoff requires a new
