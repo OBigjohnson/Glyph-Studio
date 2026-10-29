@@ -30,6 +30,17 @@ function requiredEnv(name: string) {
   return value
 }
 
+function fallbackVideoPrompt(
+  contentType: string,
+  angle: string,
+  projectTitle: string | null,
+): string {
+  const visualBrief = contentType === 'portfolio_story'
+    ? `Animate the supplied reference artwork for the project "${projectTitle || 'the selected portfolio project'}". Preserve its exact logo, spelling, typography, colors, layout, and proportions. Do not redesign, replace, or add brand elements.`
+    : `Create clear explanatory motion graphics for this educational topic: "${angle}". Use simple visual metaphors and readable visual hierarchy; do not imply that a specific portfolio design is shown.`
+  return `Create a polished vertical 9:16 short-form social video, approximately 8-12 seconds, for a creative studio. ${visualBrief} Open with a visual hook that communicates the audience problem, progress through two or three calm, purposeful scenes showing a useful way forward, then finish on a clean frame with space for the creator to add their own text or call to action in editing. Use smooth camera movement, restrained transitions, consistent lighting, and crisp professional motion. Do not generate logos, extra text, fake interface copy, testimonials, statistics, or unsupported results.`
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (request.method !== 'POST') return response({ error: 'Method not allowed.' }, 405)
@@ -217,7 +228,7 @@ Deno.serve(async (request) => {
       project_id?: unknown
       angle?: unknown
       rationale?: unknown
-      drafts?: Array<{ platform?: unknown; caption?: unknown; video_prompt?: unknown }>
+      drafts?: unknown
     }
     try {
       result = JSON.parse(generatedText)
@@ -226,41 +237,57 @@ Deno.serve(async (request) => {
       return response({ error: 'Gemini returned an unreadable response. Please try again.' }, 502)
     }
 
-    const selectedProject = typeof result.project_id === 'string'
-      ? projects.find((project) => project.id === result.project_id) || null
+    const contentType = preferredContentType
+    const selectedProject = contentType === 'portfolio_story'
+      ? projects.find((project) => project.id === result.project_id) || rotationCandidates[0] || null
       : null
-    const contentType = result.content_type
     const drafts = result.drafts
-    const isPortfolioStory = contentType === 'portfolio_story'
-    if ((contentType !== 'portfolio_story' && contentType !== 'educational_solution')
-      || contentType !== preferredContentType
-      || (isPortfolioStory && !selectedProject)
-      || (!isPortfolioStory && result.project_id !== '')
-      || typeof result.angle !== 'string' || !result.angle.trim()
-      || typeof result.rationale !== 'string' || !result.rationale.trim()
-      || !Array.isArray(drafts) || drafts.length !== requestedPlatforms.length
-      || requestedPlatforms.some((platform) => drafts.filter((draft) => draft.platform === platform).length !== 1)
-      || drafts.some((draft) => typeof draft.caption !== 'string' || !draft.caption.trim()
-        || typeof draft.video_prompt !== 'string'
-        || !platforms.includes(draft.platform as Platform)
-        || draft.caption.length > platformLimits[draft.platform as Platform]
-        || (['instagram', 'tiktok', 'youtube'].includes(draft.platform as Platform)
-          ? !draft.video_prompt.trim() || draft.video_prompt.length > 3000
-          : draft.video_prompt !== ''))) {
-      console.error('Gemini returned content that did not match the requested platform or project structure.')
-      return response({ error: 'Gemini returned incomplete or invalid drafts. Please try again.' }, 502)
+    if (!selectedProject && contentType === 'portfolio_story') {
+      console.error('No portfolio project was available for a portfolio story.')
+      return response({ error: 'A portfolio story was selected, but no project is available. Try generating again.' }, 502)
     }
+    if (!Array.isArray(drafts)) {
+      console.error('Gemini returned no draft list.')
+      return response({ error: 'Gemini did not return platform drafts. Please try again.' }, 502)
+    }
+
+    const angle = typeof result.angle === 'string' && result.angle.trim()
+      ? result.angle.trim()
+      : contentType === 'educational_solution' ? 'A practical solution to an audience problem' : 'A story grounded in selected portfolio work'
+    const normalizedDrafts = requestedPlatforms.map((platform) => {
+      const draft = drafts.find((candidate) => candidate
+        && typeof candidate === 'object'
+        && candidate.platform === platform)
+      const caption = typeof draft?.caption === 'string' ? draft.caption.trim() : ''
+      if (!caption || caption.length > platformLimits[platform]) return null
+
+      const needsVideoPrompt = ['instagram', 'tiktok', 'youtube'].includes(platform)
+      const suppliedVideoPrompt = typeof draft.video_prompt === 'string' ? draft.video_prompt.trim() : ''
+      const videoPrompt = needsVideoPrompt
+        ? (suppliedVideoPrompt.slice(0, 3000)
+          || fallbackVideoPrompt(contentType, angle, selectedProject?.title || null))
+        : ''
+      return { platform, caption, video_prompt: videoPrompt }
+    })
+    if (normalizedDrafts.some((draft) => !draft)) {
+      console.error('Gemini returned a missing or over-limit caption for a requested platform.')
+      return response({ error: 'Gemini returned a missing or over-limit caption. Please generate again.' }, 502)
+    }
+
+    const rationale = typeof result.rationale === 'string' && result.rationale.trim()
+      ? result.rationale.trim()
+      : 'This post leads with audience value and offers a natural next step.'
 
     return response({
       content_type: contentType,
       project: selectedProject,
-      angle: result.angle.trim().slice(0, 240),
-      rationale: result.rationale.trim().slice(0, 500),
-      drafts: drafts.map((draft) => ({
+      angle: angle.slice(0, 240),
+      rationale: rationale.slice(0, 500),
+      drafts: normalizedDrafts.map((draft) => ({
         platform: draft.platform,
-        caption: draft.caption.trim(),
+        caption: draft.caption,
         alt_text: '',
-        video_prompt: draft.video_prompt.trim(),
+        video_prompt: draft.video_prompt,
       })),
     })
   } catch (error) {
