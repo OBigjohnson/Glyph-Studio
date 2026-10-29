@@ -309,10 +309,10 @@ function PortfolioDetail() {
 
 function Contact() {
   const { studio } = usePublicStudio()
-  const { user, signUp } = useAuth()
+  const { user, sendSignInLink } = useAuth()
   const navigate = useNavigate()
   const [sent, setSent] = useState(false)
-  const [confirmationPending, setConfirmationPending] = useState(false)
+  const [signInLinkPending, setSignInLinkPending] = useState(false)
   const [successMessage, setSuccessMessage] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -322,10 +322,6 @@ function Contact() {
     const form = event.currentTarget
     const values = Object.fromEntries(new FormData(form))
     const email = String(values.email).trim().toLowerCase()
-    if (!user && values.password !== values.confirmPassword) {
-      setError('The passwords do not match.')
-      return
-    }
     setBusy(true)
     setError('')
     const { error: submitError } = await supabase.rpc('submit_inquiry', {
@@ -360,19 +356,19 @@ function Contact() {
       navigate('/portal')
       return
     }
-    const signup = await signUp({
+    const signInLink = await sendSignInLink({
       email,
-      password: String(values.password),
       fullName: String(values.name).trim(),
       accountType: 'client',
+      shouldCreateUser: true,
       redirectTo: `${window.location.origin}${appPath('/portal')}`,
     })
-    if (signup.error) {
-      setSuccessMessage('Your request is saved. This email may already have an account; sign in to connect your request to the client portal.')
-      setError('')
-    } else if (!signup.data.session) {
-      setConfirmationPending(true)
-      setSuccessMessage('Your request is saved. Check your email to confirm your account, then sign in to open the client portal.')
+    if (signInLink.error) {
+      setSuccessMessage('Your request is saved, but we could not send the secure portal sign-in link. The studio can still follow up using your email.')
+      setError(signInLink.error.message)
+    } else if (!signInLink.data.session) {
+      setSignInLinkPending(true)
+      setSuccessMessage('Your request is saved. Check your email for a secure sign-in link to open the client portal. No password is needed.')
     } else {
       const { error: claimError } = await supabase.rpc('claim_client_project_requests')
       if (claimError) {
@@ -387,16 +383,17 @@ function Contact() {
     setSent(true)
     setBusy(false)
   }
-  return <div className="public-site marketing-site"><SiteNav /><main className="wrap contact-page"><div className="contact-intro"><p className="kicker">LET’S GET INTO IT</p><h1>Tell us what<br />you’re <em>dreaming.</em></h1><p>Give {studio?.studio_name || 'the studio'} the short version. We’ll take it from there.</p><div className="contact-mark">✳</div></div><div className="contact-form panel">{sent ? <div className="form-success"><Check /><h2>{confirmationPending ? 'Confirm your account.' : 'Request received.'}</h2><p>{successMessage}</p>{error && <p className="notice-error">{error}</p>}<Link className="button button-dark" to="/sign-in?returnTo=%2Fportal">Sign in to the client portal <ArrowRight size={16} /></Link></div> : <form onSubmit={submit}><label>Your name<input name="name" required maxLength="120" autoComplete="name" /></label><label>Your email<input name="email" required type="email" maxLength="254" autoComplete="email" /></label><label>What are you looking for?<select name="service" defaultValue=""><option value="" disabled>Pick a starting point</option>{(studio?.services?.length ? studio.services : services).map((service) => <option key={service}>{service}</option>)}<option>Something else</option></select></label><label>A little about it<textarea name="message" required minLength="10" maxLength="5000" rows="5" /></label>{!user && <><label>Create a client portal password<input name="password" required type="password" minLength="8" autoComplete="new-password" /></label><label>Confirm password<input name="confirmPassword" required type="password" minLength="8" autoComplete="new-password" /></label><small className="muted-copy">You’ll use this account to follow your request and message the studio.</small></>  }{user && user.email?.toLowerCase() !== studioOwnerEmail && <p className="muted-copy">You’re signed in as {user.email}. Use that email address to connect this request to your client portal.</p>}{error && <p className="notice-error">{error}</p>}<button className="button button-dark button-wide" disabled={busy}>{busy ? 'Creating your request…' : user ? 'Send project request' : 'Send request & open portal'} <Send size={16} /></button></form>}</div></main><SiteFooter /></div>
+  return <div className="public-site marketing-site"><SiteNav /><main className="wrap contact-page"><div className="contact-intro"><p className="kicker">LET’S GET INTO IT</p><h1>Tell us what<br />you’re <em>dreaming.</em></h1><p>Give {studio?.studio_name || 'the studio'} the short version. We’ll take it from there.</p><div className="contact-mark">✳</div></div><div className="contact-form panel">{sent ? <div className="form-success"><Check /><h2>{signInLinkPending ? 'Check your email.' : 'Request received.'}</h2><p>{successMessage}</p>{error && <p className="notice-error">{error}</p>}<Link className="button button-dark" to="/sign-in?returnTo=%2Fportal">Go to client portal sign-in <ArrowRight size={16} /></Link></div> : <form onSubmit={submit}><label>Your name<input name="name" required maxLength="120" autoComplete="name" /></label><label>Your email<input name="email" required type="email" maxLength="254" autoComplete="email" /></label><label>What are you looking for?<select name="service" defaultValue=""><option value="" disabled>Pick a starting point</option>{(studio?.services?.length ? studio.services : services).map((service) => <option key={service}>{service}</option>)}<option>Something else</option></select></label><label>A little about it<textarea name="message" required minLength="10" maxLength="5000" rows="5" /></label>{!user && <small className="muted-copy">We’ll email you a secure sign-in link so you can access the client portal—no password needed.</small>}{user && user.email?.toLowerCase() !== studioOwnerEmail && <p className="muted-copy">You’re signed in as {user.email}. Use that email address to connect this request to your client portal.</p>}{error && <p className="notice-error">{error}</p>}<button className="button button-dark button-wide" disabled={busy}>{busy ? 'Creating your request…' : user ? 'Send project request' : 'Send request & email portal link'} <Send size={16} /></button></form>}</div></main><SiteFooter /></div>
 }
 
 function AuthPage({ signup = false }) {
-  const { signIn, signUp, resetPassword, updatePassword, recoveryPending, user, configured, configMessage } = useAuth()
+  const { signIn, signUp, sendSignInLink, resetPassword, updatePassword, recoveryPending, user, configured, configMessage } = useAuth()
   const location = useLocation()
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const [resetMode, setResetMode] = useState(false)
+  const [emailLinkMode, setEmailLinkMode] = useState(false)
   const navigate = useNavigate()
   const requestedPath = typeof location.state?.from === 'string' ? location.state.from : ''
   const queryReturnTo = new URLSearchParams(location.search).get('returnTo') || ''
@@ -440,6 +437,7 @@ function AuthPage({ signup = false }) {
     ? requestedReturnPath
     : safeAuthReturnPath(storedPath) ? storedPath : '/studio'
   const isClientInvite = isPortalInvitation(returnTo)
+  const isClientPortal = returnTo === '/portal' || returnTo.startsWith('/portal/')
   const authQuery = isClientInvite ? `?returnTo=${encodeURIComponent(returnTo)}` : ''
   async function submit(event) {
     event.preventDefault()
@@ -467,6 +465,13 @@ function AuthPage({ signup = false }) {
       ? await updatePassword(values.password)
       : resetMode
         ? await resetPassword(values.email)
+        : emailLinkMode
+          ? await sendSignInLink({
+            email: values.email,
+            accountType: isClientPortal ? 'client' : undefined,
+            shouldCreateUser: isClientPortal,
+            redirectTo: `${window.location.origin}${appPath(returnTo)}`,
+          })
         : signup
         ? await signUp({
           email: values.email,
@@ -487,6 +492,10 @@ function AuthPage({ signup = false }) {
       setMessage('If an account exists for that email, a secure password-reset link is on its way.')
       form.reset()
     }
+    else if (emailLinkMode) {
+      setMessage('If an account exists for that email, a secure sign-in link is on its way. Check your inbox and spam folder.')
+      form.reset()
+    }
     else if (signup && !result.data.session) {
       setMessage('Check your email to confirm your account, then sign in.')
       form.reset()
@@ -497,15 +506,18 @@ function AuthPage({ signup = false }) {
     }
   }
   if (user && !recoveryPending) return <Navigate to={returnTo} replace />
-  const title = recoveryPending ? 'Choose a new password.' : resetMode ? 'Reset your password.' : signup ? isClientInvite ? 'Join the project.' : 'Make room.' : 'Welcome back.'
+  const title = recoveryPending ? 'Choose a new password.' : resetMode ? 'Reset your password.' : emailLinkMode ? 'Get a secure sign-in link.' : signup ? isClientInvite ? 'Join the project.' : 'Make room.' : 'Welcome back.'
   const description = recoveryPending
     ? 'Choose a new password for your GLYPH studio account.'
     : resetMode ? 'We’ll email you a secure link to choose a new password.'
+      : emailLinkMode ? 'Enter your email and we’ll send you a one-time sign-in link. No password needed.'
       : signup ? isClientInvite
         ? 'Create a client login using the same email address this invitation was sent to.'
-        : 'Create your private studio workspace.' : 'Sign in to your creative studio.'
+        : 'Create your private studio workspace.'
+        : isClientPortal ? 'Sign in with your password or request a secure link sent to your email.'
+          : 'Sign in to your creative studio.'
   if (signup && !isClientInvite) return <Navigate to="/" replace />
-  return <div className="auth-layout"><div className="auth-brand"><Brand /></div><main className="auth-panel"><p className="kicker">{isClientInvite ? 'GLYPH / CLIENT ACCESS' : 'GLYPH / STUDIO ACCESS'}</p><h1>{title}</h1><p>{description}</p>{isClientInvite && inviteStatus === 'loading' && <p className="loading-copy">Checking your private invitation…</p>}<form onSubmit={submit}>{signup && !resetMode && !recoveryPending && <label>Your name<input name="fullName" required minLength="2" autoComplete="name" /></label>}{!recoveryPending && !resetMode && <label>Email<input name="email" required type="email" autoComplete="email" value={isClientInvite && inviteStatus === 'valid' ? inviteEmail : undefined} readOnly={isClientInvite} /></label>}{resetMode && <label>Email<input name="email" required type="email" autoComplete="email" /></label>}{!resetMode && <label>{recoveryPending ? 'New password' : 'Password'}<input name="password" required type="password" minLength={signup || recoveryPending ? 8 : undefined} autoComplete={signup || recoveryPending ? 'new-password' : 'current-password'} /></label>}{recoveryPending && <label>Confirm new password<input name="confirmPassword" required type="password" minLength="8" autoComplete="new-password" /></label>}{error && <p className="notice-error">{error}</p>}{message && <p className="notice-success">{message}</p>}{!configured && <p className="notice-error">{configMessage}</p>}<button className="button button-dark button-wide" disabled={busy || !configured || (isClientInvite && inviteStatus !== 'valid')}>{busy ? 'One moment…' : recoveryPending ? 'Save new password' : resetMode ? 'Send reset link' : signup ? 'Create client account' : 'Sign in'} <ArrowRight size={16} /></button></form>{!signup && !recoveryPending && <button className="quiet-link auth-reset" onClick={() => { setResetMode((current) => !current); setError(''); setMessage('') }}>{resetMode ? 'Back to sign in' : 'Forgot your password?'}</button>}{isClientInvite && <p className="auth-switch">{signup ? 'Already have a client login?' : 'New to the client portal?'} <Link to={`${signup ? '/sign-in' : '/create-account'}${authQuery}`}>{signup ? 'Sign in' : 'Create a client login'}</Link></p>}<Link className="quiet-link auth-back" to="/"><ArrowLeft size={15} /> Back to the public site</Link></main></div>
+  return <div className="auth-layout"><div className="auth-brand"><Brand /></div><main className="auth-panel"><p className="kicker">{isClientInvite || isClientPortal ? 'GLYPH / CLIENT ACCESS' : 'GLYPH / STUDIO ACCESS'}</p><h1>{title}</h1><p>{description}</p>{isClientInvite && inviteStatus === 'loading' && <p className="loading-copy">Checking your private invitation…</p>}<form onSubmit={submit}>{signup && !resetMode && !recoveryPending && <label>Your name<input name="fullName" required minLength="2" autoComplete="name" /></label>}{!recoveryPending && !resetMode && <label>Email<input name="email" required type="email" autoComplete="email" value={isClientInvite && inviteStatus === 'valid' ? inviteEmail : undefined} readOnly={isClientInvite} /></label>}{resetMode && <label>Email<input name="email" required type="email" autoComplete="email" /></label>}{!resetMode && !emailLinkMode && <label>{recoveryPending ? 'New password' : 'Password'}<input name="password" required type="password" minLength={signup || recoveryPending ? 8 : undefined} autoComplete={signup || recoveryPending ? 'new-password' : 'current-password'} /></label>}{recoveryPending && <label>Confirm new password<input name="confirmPassword" required type="password" minLength="8" autoComplete="new-password" /></label>}{error && <p className="notice-error">{error}</p>}{message && <p className="notice-success">{message}</p>}{!configured && <p className="notice-error">{configMessage}</p>}<button className="button button-dark button-wide" disabled={busy || !configured || (isClientInvite && inviteStatus !== 'valid')}>{busy ? 'One moment…' : recoveryPending ? 'Save new password' : resetMode ? 'Send reset link' : emailLinkMode ? 'Email me a sign-in link' : signup ? 'Create client account' : 'Sign in'} <ArrowRight size={16} /></button></form>{!signup && !recoveryPending && <><button className="quiet-link auth-reset" onClick={() => { setResetMode((current) => !current); setEmailLinkMode(false); setError(''); setMessage('') }}>{resetMode ? 'Back to sign in' : 'Forgot your password?'}</button><button className="quiet-link auth-reset" onClick={() => { setEmailLinkMode((current) => !current); setResetMode(false); setError(''); setMessage('') }}>{emailLinkMode ? 'Back to password sign in' : 'Email me a secure sign-in link'}</button></>}{isClientInvite && <p className="auth-switch">{signup ? 'Already have a client login?' : 'New to the client portal?'} <Link to={`${signup ? '/sign-in' : '/create-account'}${authQuery}`}>{signup ? 'Sign in' : 'Create a client login'}</Link></p>}<Link className="quiet-link auth-back" to="/"><ArrowLeft size={15} /> Back to the public site</Link></main></div>
 }
 
 function isPortalInvitation(path) {

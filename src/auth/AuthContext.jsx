@@ -81,6 +81,20 @@ export function AuthProvider({ children }) {
       if (!supabase) return { data: null, error: new Error(supabaseConfigMessage) }
       return supabase.auth.signInWithPassword({ email, password })
     },
+    async sendSignInLink({ email, fullName, redirectTo, accountType, shouldCreateUser = false }) {
+      if (!supabase) return { data: null, error: new Error(supabaseConfigMessage) }
+      return supabase.auth.signInWithOtp({
+        email,
+        options: {
+          emailRedirectTo: redirectTo || `${getAuthRedirectBase()}/sign-in`,
+          shouldCreateUser,
+          data: {
+            full_name: fullName,
+            ...(accountType ? { account_type: accountType } : {}),
+          },
+        },
+      })
+    },
     async signOut() {
       if (!supabase) return { error: new Error(supabaseConfigMessage) }
       const result = await supabase.auth.signOut()

@@ -40,8 +40,10 @@ create an EAS APK.
 
 Enable the email provider in **Authentication → Providers**. Configure the site
 URL and redirect URLs (for local development, `http://localhost:5173`) in
-**Authentication → URL Configuration**. Email confirmation and password-reset
-links return to `/sign-in`.
+**Authentication → URL Configuration**, including the public site's `/portal`
+route. The public project-request form and sign-in page use secure email links
+for passwordless client access. Configure custom SMTP before production use;
+Supabase's built-in email delivery is rate-limited.
 
 ## Development
 
