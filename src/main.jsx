@@ -1765,7 +1765,18 @@ function ContentCalendar() {
     }
     setGenerating(false)
     if (generationError || data?.error) {
-      setError(data?.error || generationError?.message || 'Could not generate social content.')
+      let functionErrorMessage = ''
+      if (generationError?.context instanceof Response) {
+        const responseText = await generationError.context.text()
+        try {
+          const errorBody = JSON.parse(responseText)
+          if (typeof errorBody.error === 'string') functionErrorMessage = errorBody.error
+          else if (typeof errorBody.message === 'string') functionErrorMessage = errorBody.message
+        } catch (parseError) {
+          console.warn('Could not parse the content generation error response.', parseError)
+        }
+      }
+      setError(data?.error || functionErrorMessage || generationError?.message || 'Could not generate social content.')
       return
     }
     const selectedWork = data?.project

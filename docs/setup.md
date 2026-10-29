@@ -66,8 +66,8 @@ to `.env.local`, a `VITE_*` variable, the website, or the Expo app.
 
 2. Create a Gemini API key in
    [Google AI Studio](https://aistudio.google.com/app/apikey) and add it as a
-   Supabase Function secret. `GEMINI_MODEL` is optional; the default is
-   `gemini-3.8-flash`.
+   Supabase Function secret named exactly `GEMINI_API_KEY` (including the
+   underscores). `GEMINI_MODEL` is optional; the default is `gemini-3.8-flash`.
 
    ```bash
    supabase secrets set GEMINI_API_KEY=your_gemini_api_key GEMINI_MODEL=gemini-3.8-flash
