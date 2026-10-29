@@ -1758,7 +1758,7 @@ function ContentCalendar() {
     try {
       ({ data, error: generationError } = await supabase.functions.invoke('generate-social-content', {
         body: { platforms: campaignPlatforms },
-        timeout: 60_000,
+        timeout: 75_000,
       }))
     } catch (requestError) {
       setGenerating(false)
