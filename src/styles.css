@@ -1293,6 +1293,12 @@ input:focus,textarea:focus,select:focus{border-color:var(--blue);box-shadow:0 0 
 .campaign-review-work { display: flex; align-items: center; gap: 11px; padding-bottom: 12px; border-bottom: 1px solid var(--studio-line); }
 .campaign-review-work img { width: 56px; height: 56px; object-fit: cover; }
 .campaign-generated-image-preview { display: block; width: min(100%, 360px); max-height: 420px; margin-inline: auto; object-fit: contain; border: 1px solid var(--studio-line); background: #eef1ec; }
+.campaign-image-warning { margin: 0; padding: 11px; border: 1px solid #e8c98a; background: #fff8e9; color: #704b0c; font-size: 11px; line-height: 1.5; }
+.campaign-image-prompt { display: grid; gap: 7px; padding: 11px; border: 1px solid var(--studio-line); background: #f7f8f6; }
+.campaign-image-prompt > label { color: var(--studio-muted); font-size: 10px; font-weight: 650; }
+.campaign-image-prompt textarea { width: 100%; min-height: 100px; resize: vertical; line-height: 1.5; }
+.campaign-image-prompt .button { justify-self: start; }
+.campaign-image-prompt small { color: var(--studio-muted); font-size: 10px; line-height: 1.5; }
 .campaign-review-work > div { min-width: 0; display: grid; gap: 4px; }
 .campaign-review-work b { font-size: 13px; }
 .campaign-review-work span { color: var(--studio-muted); font-size: 10px; }

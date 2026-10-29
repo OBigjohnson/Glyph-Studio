@@ -1682,6 +1682,7 @@ function ContentCalendar() {
   const [copiedId, setCopiedId] = useState('')
   const [copiedAltId, setCopiedAltId] = useState('')
   const [copiedVideoId, setCopiedVideoId] = useState('')
+  const [copiedImagePromptId, setCopiedImagePromptId] = useState('')
   const [campaignSetup, setCampaignSetup] = useState(null)
   const [campaignDrafts, setCampaignDrafts] = useState(null)
   const [campaignPlatforms, setCampaignPlatforms] = useState([])
@@ -1693,7 +1694,7 @@ function ContentCalendar() {
     setError('')
     const [postResult, assetResult, workResult] = await Promise.all([
       supabase.from('social_content_posts')
-        .select('id, platform, caption, alt_text, content_type, video_generation_prompt, planned_at, status, portfolio_asset_id, portfolio_item_id, copied_at, copy_count, used_at, published_at, created_at, updated_at')
+        .select('id, platform, caption, alt_text, content_type, video_generation_prompt, image_generation_prompt, generated_image_path, planned_at, status, portfolio_asset_id, portfolio_item_id, copied_at, copy_count, used_at, published_at, created_at, updated_at')
         .eq('workspace_id', workspace.id)
         .order('planned_at', { ascending: true, nullsFirst: false }),
       supabase.from('portfolio_assets')
@@ -1827,10 +1828,6 @@ function ContentCalendar() {
       }
       generatedImage = { path: data.generated_image_path, url: signedImage.signedUrl }
     }
-    if (contentType === 'educational_solution' && !generatedImage) {
-      setError('The educational post was generated without its image. Please try again.')
-      return
-    }
     const plannedAt = campaignSetup.planned_local
       ? new Date(campaignSetup.planned_local).toISOString()
       : null
@@ -1838,6 +1835,8 @@ function ContentCalendar() {
       work: selectedWork,
       asset: selectedAsset || null,
       generatedImage,
+      generatedImageError: data.generated_image_error || '',
+      imageGenerationPrompt: data.image_generation_prompt || '',
       contentType,
       plannedAt,
       angle: data.angle,
@@ -1877,6 +1876,7 @@ function ContentCalendar() {
       alt_text: draft.alt_text.trim(),
       content_type: campaignDrafts.contentType,
       video_generation_prompt: draft.video_prompt.trim(),
+      image_generation_prompt: campaignDrafts.imageGenerationPrompt,
       generated_image_path: campaignDrafts.generatedImage?.path || null,
       planned_at: campaignDrafts.plannedAt,
       status: campaignDrafts.plannedAt ? 'planned' : 'draft',
@@ -1922,6 +1922,7 @@ function ContentCalendar() {
       alt_text: String(form.get('alt_text') || '').trim(),
       content_type: editor.content_type || 'educational_solution',
       video_generation_prompt: String(form.get('video_generation_prompt') || '').trim(),
+      image_generation_prompt: editor.image_generation_prompt || '',
       planned_at: dateValue ? new Date(dateValue).toISOString() : null,
       status: requestedStatus,
       portfolio_asset_id: String(form.get('portfolio_asset_id') || '') || null,
@@ -2048,6 +2049,16 @@ function ContentCalendar() {
     }
   }
 
+  async function copyImageGenerationPrompt(prompt, key) {
+    try {
+      await navigator.clipboard.writeText(prompt)
+      setCopiedImagePromptId(key)
+      window.setTimeout(() => setCopiedImagePromptId(''), 1800)
+    } catch {
+      setError('Clipboard access is unavailable. Select and copy the image-generation prompt manually.')
+    }
+  }
+
   async function downloadAsset(post) {
     const asset = assets.find((entry) => entry.id === post.portfolio_asset_id)
     const imageUrl = asset?.url || post.generated_image_url
@@ -2112,10 +2123,10 @@ function ContentCalendar() {
         </section>
         <aside className="calendar-agenda">
           <header><div><p className="kicker">DAY PLAN</p><h2>{new Date(`${selectedDate}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</h2></div><button className="icon-button" aria-label="Plan a post for this day" onClick={() => openEditor(null, selectedDate)}><Plus /></button></header>
-          {selectedPosts.length ? <div className="calendar-post-list">{selectedPosts.map((post) => <CalendarPost key={post.id} post={post} assets={assets} copied={copiedId === post.id} copiedAlt={copiedAltId === post.id} copiedVideo={copiedVideoId === post.id} onEdit={() => openEditor(post)} onDelete={() => removePost(post)} onCopy={() => copyCaption(post)} onCopyAlt={() => copyImageDescription(post)} onCopyVideo={() => copyVideoPrompt(post)} onDownload={() => downloadAsset(post)} onStatus={(status) => changeStatus(post, status)} onUsed={() => markPostUsed(post)} />)}</div> : <p className="empty-copy">Nothing planned for this day.</p>}
+          {selectedPosts.length ? <div className="calendar-post-list">{selectedPosts.map((post) => <CalendarPost key={post.id} post={post} assets={assets} copied={copiedId === post.id} copiedAlt={copiedAltId === post.id} copiedVideo={copiedVideoId === post.id} copiedImagePrompt={copiedImagePromptId === post.id} onEdit={() => openEditor(post)} onDelete={() => removePost(post)} onCopy={() => copyCaption(post)} onCopyAlt={() => copyImageDescription(post)} onCopyVideo={() => copyVideoPrompt(post)} onCopyImagePrompt={() => copyImageGenerationPrompt(post.image_generation_prompt, post.id)} onDownload={() => downloadAsset(post)} onStatus={(status) => changeStatus(post, status)} onUsed={() => markPostUsed(post)} />)}</div> : <p className="empty-copy">Nothing planned for this day.</p>}
         </aside>
       </div>
-      <section className="calendar-drafts"><div className="studio-section-heading"><div><p className="kicker">NO DATE SET</p><h2>Drafts</h2></div><span>{draftPosts.length}</span></div>{draftPosts.length ? <div className="calendar-post-list">{draftPosts.map((post) => <CalendarPost key={post.id} post={post} assets={assets} copied={copiedId === post.id} copiedAlt={copiedAltId === post.id} copiedVideo={copiedVideoId === post.id} onEdit={() => openEditor(post)} onDelete={() => removePost(post)} onCopy={() => copyCaption(post)} onCopyAlt={() => copyImageDescription(post)} onCopyVideo={() => copyVideoPrompt(post)} onDownload={() => downloadAsset(post)} onStatus={(status) => changeStatus(post, status)} onUsed={() => markPostUsed(post)} />)}</div> : <p className="empty-copy">Unscheduled drafts will collect here.</p>}
+      <section className="calendar-drafts"><div className="studio-section-heading"><div><p className="kicker">NO DATE SET</p><h2>Drafts</h2></div><span>{draftPosts.length}</span></div>{draftPosts.length ? <div className="calendar-post-list">{draftPosts.map((post) => <CalendarPost key={post.id} post={post} assets={assets} copied={copiedId === post.id} copiedAlt={copiedAltId === post.id} copiedVideo={copiedVideoId === post.id} copiedImagePrompt={copiedImagePromptId === post.id} onEdit={() => openEditor(post)} onDelete={() => removePost(post)} onCopy={() => copyCaption(post)} onCopyAlt={() => copyImageDescription(post)} onCopyVideo={() => copyVideoPrompt(post)} onCopyImagePrompt={() => copyImageGenerationPrompt(post.image_generation_prompt, post.id)} onDownload={() => downloadAsset(post)} onStatus={(status) => changeStatus(post, status)} onUsed={() => markPostUsed(post)} />)}</div> : <p className="empty-copy">Unscheduled drafts will collect here.</p>}
     </section>
     </>}
   {editor && <Modal title={editor.id ? 'Edit planned post' : 'Plan a social post'} onClose={() => { if (!saving) setEditor(null) }}><form onSubmit={savePost}>
@@ -2127,6 +2138,7 @@ function ContentCalendar() {
       <label>Portfolio image<select name="portfolio_asset_id" value={editor.portfolio_asset_id || ''} onChange={(event) => setEditor((current) => ({ ...current, portfolio_asset_id: event.target.value }))}><option value="">No image selected</option>{assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.title} · {asset.file_name}</option>)}</select></label>
       {editor.portfolio_asset_id && assets.find((asset) => asset.id === editor.portfolio_asset_id)?.url && <img className="calendar-image-preview" src={assets.find((asset) => asset.id === editor.portfolio_asset_id).url} alt="Selected portfolio image" />}
       {!editor.portfolio_asset_id && editor.generated_image_url && <img className="calendar-image-preview" src={editor.generated_image_url} alt="Generated educational post image" />}
+      {editor.image_generation_prompt && <div className="campaign-image-prompt"><label htmlFor="post-image-generation-prompt">Image generation prompt</label><textarea id="post-image-generation-prompt" rows="5" maxLength="5000" value={editor.image_generation_prompt} onChange={(event) => setEditor((current) => ({ ...current, image_generation_prompt: event.target.value }))} /><button className="button button-soft" type="button" onClick={() => copyImageGenerationPrompt(editor.image_generation_prompt, editor.id || 'editor')}>{copiedImagePromptId === (editor.id || 'editor') ? 'Copied' : 'Copy image prompt'}</button></div>}
       <label>Planning status<select name="status" value={editor.status} onChange={(event) => setEditor((current) => ({ ...current, status: event.target.value }))}>{postStatuses.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
       <p className="muted-copy">Status is your note only. GLYPH cannot see whether a post was scheduled or published on the platform.</p>
       <button className="button button-dark" disabled={saving}>{saving ? 'Saving…' : editor.id ? 'Save changes' : 'Save post'} <Check size={15} /></button>
@@ -2142,13 +2154,15 @@ function ContentCalendar() {
       {campaignDrafts.generatedImage?.url && <img className="campaign-generated-image-preview" src={campaignDrafts.generatedImage.url} alt="Full preview of generated social post artwork" />}
       <section className="campaign-angle"><b>Content angle</b><p>{campaignDrafts.angle}</p><small>{campaignDrafts.rationale}</small></section>
       <p className="muted-copy">Review and edit every draft before saving. GLYPH does not post or schedule externally.</p>
+      {campaignDrafts.generatedImageError && <p className="campaign-image-warning">{campaignDrafts.generatedImageError} You can still save the captions and generate the image later from the saved prompt.</p>}
+      {!campaignDrafts.generatedImage?.url && campaignDrafts.imageGenerationPrompt && <div className="campaign-image-prompt"><label htmlFor="campaign-image-prompt">Image generation prompt</label><textarea id="campaign-image-prompt" rows="5" maxLength="5000" value={campaignDrafts.imageGenerationPrompt} onChange={(event) => setCampaignDrafts((current) => ({ ...current, imageGenerationPrompt: event.target.value }))} /><button className="button button-soft" type="button" onClick={() => copyImageGenerationPrompt(campaignDrafts.imageGenerationPrompt, 'campaign')}>{copiedImagePromptId === 'campaign' ? 'Copied' : 'Copy image prompt'}</button><small>Save the captions now, then use this prompt in an image-generation tool when available.</small></div>}
       {campaignDrafts.drafts.map((draft) => <section className="campaign-draft" key={draft.platform}><header><b>{platformName(draft.platform)}</b></header><label htmlFor={`campaign-caption-${draft.platform}`}>{platformName(draft.platform)} caption</label><textarea id={`campaign-caption-${draft.platform}`} rows={draft.platform === 'x' ? 4 : 6} maxLength={socialPlatforms.find((platform) => platform.id === draft.platform)?.limit || 5000} value={draft.caption} onChange={(event) => editCampaignCaption(draft.platform, event.target.value)} /><small className="campaign-character-count">{draft.caption.length} / {socialPlatforms.find((platform) => platform.id === draft.platform)?.limit || 5000} characters</small><label htmlFor={`campaign-alt-${draft.platform}`}>Optional image description (Gemini does not see images)</label><textarea id={`campaign-alt-${draft.platform}`} rows="2" maxLength="1000" value={draft.alt_text} onChange={(event) => setCampaignDrafts((current) => ({ ...current, drafts: current.drafts.map((entry) => entry.platform === draft.platform ? { ...entry, alt_text: event.target.value } : entry) }))} />{draft.video_prompt && <div className="campaign-video-prompt"><label htmlFor={`campaign-video-${draft.platform}`}>Google Flow video-generation prompt</label><textarea id={`campaign-video-${draft.platform}`} rows="6" maxLength="3000" value={draft.video_prompt} onChange={(event) => editCampaignVideoPrompt(draft.platform, event.target.value)} /><button className="button button-soft" type="button" onClick={() => copyVideoPromptText(draft.video_prompt, draft.platform)}><Copy size={14} /> {copiedVideoId === draft.platform ? 'Copied' : 'Copy Flow prompt'}</button><small>Paste this into Google Flow. For a portfolio story, add the project design as a reference image.</small></div>}</section>)}
       <div className="campaign-review-actions"><button className="button button-soft" type="button" onClick={() => { void discardCampaignDrafts(); openCampaign(selectedDate) }}>Generate again</button><button className="button button-dark" type="button" disabled={saving || campaignDrafts.drafts.some((draft) => !draft.caption.trim() || draft.caption.length > (socialPlatforms.find((platform) => platform.id === draft.platform)?.limit || 5000) || (['instagram', 'tiktok', 'youtube'].includes(draft.platform) && !draft.video_prompt.trim()))} onClick={saveCampaign}>{saving ? 'Saving…' : `Save ${campaignDrafts.drafts.length} drafts`} <Check size={15} /></button></div>
     </div></Modal>}
   </main>
 }
 
-function CalendarPost({ post, assets, copied, copiedAlt, copiedVideo, onEdit, onDelete, onCopy, onCopyAlt, onCopyVideo, onDownload, onStatus, onUsed }) {
+function CalendarPost({ post, assets, copied, copiedAlt, copiedVideo, copiedImagePrompt, onEdit, onDelete, onCopy, onCopyAlt, onCopyVideo, onCopyImagePrompt, onDownload, onStatus, onUsed }) {
   const asset = assets.find((entry) => entry.id === post.portfolio_asset_id)
   const imageUrl = asset?.url || post.generated_image_url
   const platform = socialPlatforms.find((entry) => entry.id === post.platform)
@@ -2159,6 +2173,7 @@ function CalendarPost({ post, assets, copied, copiedAlt, copiedVideo, onEdit, on
       <button className="button button-soft" onClick={onCopy}><Copy size={14} /> {copied ? 'Copied' : 'Copy caption'}</button>
       {post.alt_text && <button className="button button-soft" onClick={onCopyAlt}><Copy size={14} /> {copiedAlt ? 'Alt copied' : 'Copy alt text'}</button>}
       {post.video_generation_prompt && <button className="button button-soft" onClick={onCopyVideo}><Copy size={14} /> {copiedVideo ? 'Copied' : 'Copy Flow prompt'}</button>}
+      {post.image_generation_prompt && <button className="button button-soft" onClick={onCopyImagePrompt}><Copy size={14} /> {copiedImagePrompt ? 'Copied' : 'Copy image prompt'}</button>}
       {imageUrl && <button className="button button-soft" onClick={onDownload}><Download size={14} /> Image</button>}
       {!post.used_at && <button className="button button-soft" onClick={onUsed}>Mark used</button>}
       <a className="button button-soft" href={platform?.url} target="_blank" rel="noreferrer"><ExternalLink size={14} /> Open</a>

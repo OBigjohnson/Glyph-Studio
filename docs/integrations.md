@@ -34,7 +34,9 @@ stories connect a real audience need to a relevant project/service. Captions
 are distinct and platform-native, with natural sales invitations rather than
 generic design announcements. Educational posts also receive an original
 Gemini-generated image saved privately in the studio's storage and previewed
-before saving the post. Instagram, TikTok, and YouTube drafts include an
+before saving the post. If image quota or availability prevents generation,
+captions remain reviewable and saveable with their image prompt for later use.
+Instagram, TikTok, and YouTube drafts include an
 editable Google Flow prompt for a vertical short-form video. Prompts guide Flow
 to preserve supplied project artwork when used as a visual reference, or to
 create relevant explanatory motion for educational posts. The workspace/project

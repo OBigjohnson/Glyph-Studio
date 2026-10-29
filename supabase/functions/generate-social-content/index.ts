@@ -446,6 +446,8 @@ Deno.serve(async (request) => {
       ? result.rationale.trim()
       : 'This post leads with audience value and offers a natural next step.'
     let generatedImagePath: string | null = null
+    let generatedImageError: string | null = null
+    let imageGenerationPrompt = ''
     if (contentType === 'educational_solution') {
       const verticalFormat = requestedPlatforms.some((platform) => ['tiktok', 'youtube'].includes(platform))
       const imageModel = Deno.env.get('GEMINI_IMAGE_MODEL') || 'gemini-3.1-flash-image'
@@ -459,7 +461,8 @@ Deno.serve(async (request) => {
         'Do not include text, letters, logos, watermarks, fabricated interfaces, statistics, or claims. Leave calm negative space for text to be added later in a design editor.',
         'The visual should feel useful, relatable, warm, and professional rather than like a generic stock image.',
       ].join(' ')
-      let imageResponse: Response
+      imageGenerationPrompt = imagePrompt
+      let imageResponse: Response | null = null
       try {
         imageResponse = await fetch(
           `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(imageModel)}:generateContent`,
@@ -481,11 +484,13 @@ Deno.serve(async (request) => {
         )
       } catch (imageError) {
         if (imageError instanceof DOMException && imageError.name === 'TimeoutError') {
-          return response({ error: 'Gemini wrote the captions, but image generation took too long. Please try again.' }, 504)
+          generatedImageError = 'Image generation timed out. You can save the captions and copy the image prompt to generate the visual separately.'
+        } else {
+          generatedImageError = 'The image service could not be reached. You can save the captions and copy the image prompt to generate the visual separately.'
+          console.error('Gemini social image request failed:', imageError)
         }
-        throw imageError
       }
-      if (!imageResponse.ok) {
+      if (imageResponse && !imageResponse.ok) {
         const providerErrorText = await imageResponse.text()
         console.error('Gemini social image generation failed:', imageResponse.status, providerErrorText.slice(0, 700))
         let providerMessage = ''
@@ -497,36 +502,43 @@ Deno.serve(async (request) => {
         } catch {
           providerMessage = ''
         }
-        return response({
-          error: `Gemini wrote the captions but image generation failed (${imageResponse.status})${providerMessage ? `: ${providerMessage.slice(0, 240)}` : '. Check image model access for your Gemini API key.'}`,
-        }, 502)
+        generatedImageError = imageResponse.status === 429
+          ? 'Gemini image quota is currently exhausted. You can save the captions and copy the image prompt; image generation will work again when quota is available.'
+          : `Image generation failed (${imageResponse.status})${providerMessage ? `: ${providerMessage.slice(0, 240)}` : '. You can save the captions and copy the image prompt.'}`
       }
-      const imagePayload = await imageResponse.json()
-      const generatedImage = getGeneratedImage(imagePayload)
-      if (!generatedImage) {
-        console.error('Gemini image generation returned no image data.')
-        return response({ error: 'Gemini wrote the captions but did not return an image. Please try again.' }, 502)
-      }
-      const mimeType = generatedImage.mimeType.toLowerCase()
-      const fileExtension = mimeType === 'image/png' ? 'png' : mimeType === 'image/jpeg' ? 'jpg' : null
-      if (!fileExtension) {
-        console.error('Gemini returned an unsupported social image type:', mimeType)
-        return response({ error: 'Gemini returned an unsupported image format. Please try again.' }, 502)
-      }
-      if (generatedImage.base64.length > 20 * 1024 * 1024) {
-        return response({ error: 'Gemini returned an oversized image. Please try again.' }, 502)
-      }
-      const imageBytes = Uint8Array.from(atob(generatedImage.base64), (character) => character.charCodeAt(0))
-      if (!imageBytes.length || imageBytes.length > 15 * 1024 * 1024) {
-        return response({ error: 'Gemini returned an invalid or oversized image. Please try again.' }, 502)
-      }
-      generatedImagePath = `${membership.workspace_id}/social-content/${crypto.randomUUID()}.${fileExtension}`
-      const { error: uploadError } = await supabase.storage
-        .from('portfolio-media')
-        .upload(generatedImagePath, imageBytes, { contentType: mimeType, upsert: false })
-      if (uploadError) {
-        console.error('Could not save generated social image:', uploadError.message)
-        return response({ error: 'Gemini generated the image, but GLYPH could not save it to your studio storage.' }, 500)
+      if (imageResponse?.ok) {
+        try {
+          const imagePayload = await imageResponse.json()
+          const generatedImage = getGeneratedImage(imagePayload)
+          if (!generatedImage) {
+            generatedImageError = 'Gemini returned no image. You can save the captions and copy the image prompt to create it separately.'
+          } else {
+            const mimeType = generatedImage.mimeType.toLowerCase()
+            const fileExtension = mimeType === 'image/png' ? 'png' : mimeType === 'image/jpeg' ? 'jpg' : null
+            if (!fileExtension || generatedImage.base64.length > 20 * 1024 * 1024) {
+              generatedImageError = 'Gemini returned an unsupported or oversized image. You can save the captions and copy the image prompt.'
+            } else {
+              const imageBytes = Uint8Array.from(atob(generatedImage.base64), (character) => character.charCodeAt(0))
+              if (!imageBytes.length || imageBytes.length > 15 * 1024 * 1024) {
+                generatedImageError = 'Gemini returned an invalid or oversized image. You can save the captions and copy the image prompt.'
+              } else {
+                const imagePath = `${membership.workspace_id}/social-content/${crypto.randomUUID()}.${fileExtension}`
+                const { error: uploadError } = await supabase.storage
+                  .from('portfolio-media')
+                  .upload(imagePath, imageBytes, { contentType: mimeType, upsert: false })
+                if (uploadError) {
+                  console.error('Could not save generated social image:', uploadError.message)
+                  generatedImageError = 'The image was generated but could not be saved to studio storage. You can save the captions and copy the image prompt.'
+                } else {
+                  generatedImagePath = imagePath
+                }
+              }
+            }
+          }
+        } catch (imageProcessingError) {
+          generatedImageError = 'The generated image could not be processed. You can save the captions and copy the image prompt.'
+          console.error('Could not process generated social image:', imageProcessingError)
+        }
       }
     }
 
@@ -534,6 +546,8 @@ Deno.serve(async (request) => {
       content_type: contentType,
       project: selectedProject,
       generated_image_path: generatedImagePath,
+      generated_image_error: generatedImageError,
+      image_generation_prompt: imageGenerationPrompt,
       angle: angle.slice(0, 240),
       rationale: rationale.slice(0, 500),
       drafts: normalizedDrafts.map((draft) => ({
