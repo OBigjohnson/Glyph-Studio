@@ -36,6 +36,8 @@ generic design announcements. Educational posts also receive an original
 Gemini-generated image saved privately in the studio's storage and previewed
 before saving the post. If image quota or availability prevents generation,
 captions remain reviewable and saveable with their image prompt for later use.
+Each caption opens with a curiosity-led, truthful hook and ends with a
+platform-appropriate call to action linking directly to the public contact page.
 Instagram, TikTok, and YouTube drafts include an
 editable Google Flow prompt for a vertical short-form video. Prompts guide Flow
 to preserve supplied project artwork when used as a visual reference, or to

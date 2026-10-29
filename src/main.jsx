@@ -1773,7 +1773,10 @@ function ContentCalendar() {
     let generationError
     try {
       ({ data, error: generationError } = await supabase.functions.invoke('generate-social-content', {
-        body: { platforms: campaignPlatforms },
+        body: {
+          platforms: campaignPlatforms,
+          contact_url: new URL(appPath('/contact'), window.location.origin).toString(),
+        },
         timeout: 110_000,
       }))
     } catch (requestError) {
