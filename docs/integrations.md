@@ -32,14 +32,18 @@ educational solution posts with portfolio stories so the calendar is not limited
 to showcasing work. Educational posts provide actionable advice; portfolio
 stories connect a real audience need to a relevant project/service. Captions
 are distinct and platform-native, with natural sales invitations rather than
-generic design announcements. Instagram, TikTok, and YouTube drafts include an
+generic design announcements. Educational posts also receive an original
+Gemini-generated image saved privately in the studio's storage and previewed
+before saving the post. Instagram, TikTok, and YouTube drafts include an
 editable Google Flow prompt for a vertical short-form video. Prompts guide Flow
 to preserve supplied project artwork when used as a visual reference, or to
 create relevant explanatory motion for educational posts. The workspace/project
-data and Gemini key stay server-side; only generated drafts are returned to the
-browser. GLYPH does not send portfolio images to Gemini.
+data and Gemini key stay server-side; only generated drafts and a signed preview
+URL are returned to the browser. GLYPH does not send portfolio images to Gemini.
 
-Review and edit each caption, image description, and video prompt before saving.
+Review and edit each caption, generated image, image description, and video
+prompt before saving. Image generation uses the Gemini image model and may
+consume additional API quota or incur charges.
 Posts keep an optional reference to their portfolio project and a content type;
 recent content history informs topic rotation. Copy captions and Flow prompts,
 download a selected image, and open each platform to publish manually. This
@@ -49,10 +53,12 @@ facts and educational advice for accuracy before posting.
 
 Configure the `GEMINI_API_KEY` Supabase Function secret and deploy the
 `generate-social-content` Edge Function as described in `setup.md`. The
-optional `GEMINI_MODEL` secret defaults to `gemini-3.5-flash-lite`. Gemini usage
-may incur Google API charges and remains subject to your Google AI plan, rate
-limits, and Supabase project limits. Never put the Gemini key in a `VITE_*`
-variable, the mobile app, or source control.
+optional `GEMINI_MODEL` secret defaults to `gemini-3.5-flash-lite`; the
+educational-post image model defaults to `gemini-nano-banana-2.1` and can be
+overridden with the optional `GEMINI_IMAGE_MODEL` secret. Text and image
+generation may incur Google API charges and remain subject to your Google AI
+plan, rate limits, and Supabase project limits. Never put the Gemini key in a
+`VITE_*` variable, the mobile app, or source control.
 
 ## Future email, community, and assistant
 

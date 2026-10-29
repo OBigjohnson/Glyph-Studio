@@ -74,6 +74,11 @@ to `.env.local`, a `VITE_*` variable, the website, or the Expo app.
    supabase secrets set GEMINI_API_KEY=your_gemini_api_key GEMINI_MODEL=gemini-3.5-flash-lite
    ```
 
+   Educational posts also generate a social image with the Gemini image model
+   `gemini-nano-banana-2.1`. To override it, set the optional
+   `GEMINI_IMAGE_MODEL` Supabase Function secret. Image generation may use
+   additional API quota or incur charges.
+
 3. In Studio settings, choose the platforms to include. Open the social
    calendar, generate drafts, review/edit each one, and save. GLYPH tracks
    copies, manual "used" actions, and manually recorded publication; posting

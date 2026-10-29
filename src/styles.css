@@ -1292,6 +1292,7 @@ input:focus,textarea:focus,select:focus{border-color:var(--blue);box-shadow:0 0 
 .campaign-review > .muted-copy { margin: 0; line-height: 1.5; }
 .campaign-review-work { display: flex; align-items: center; gap: 11px; padding-bottom: 12px; border-bottom: 1px solid var(--studio-line); }
 .campaign-review-work img { width: 56px; height: 56px; object-fit: cover; }
+.campaign-generated-image-preview { display: block; width: min(100%, 360px); max-height: 420px; margin-inline: auto; object-fit: contain; border: 1px solid var(--studio-line); background: #eef1ec; }
 .campaign-review-work > div { min-width: 0; display: grid; gap: 4px; }
 .campaign-review-work b { font-size: 13px; }
 .campaign-review-work span { color: var(--studio-muted); font-size: 10px; }

@@ -41,6 +41,40 @@ function fallbackVideoPrompt(
   return `Create a polished vertical 9:16 short-form social video, approximately 8-12 seconds, for a creative studio. ${visualBrief} Open with a visual hook that communicates the audience problem, progress through two or three calm, purposeful scenes showing a useful way forward, then finish on a clean frame with space for the creator to add their own text or call to action in editing. Use smooth camera movement, restrained transitions, consistent lighting, and crisp professional motion. Do not generate logos, extra text, fake interface copy, testimonials, statistics, or unsupported results.`
 }
 
+function getGeneratedImage(payload: Record<string, unknown>) {
+  const outputImage = payload.output_image
+  if (outputImage && typeof outputImage === 'object') {
+    const image = outputImage as { data?: unknown; mime_type?: unknown; mimeType?: unknown }
+    if (typeof image.data === 'string') {
+      return {
+        base64: image.data,
+        mimeType: typeof image.mime_type === 'string'
+          ? image.mime_type
+          : typeof image.mimeType === 'string' ? image.mimeType : 'image/png',
+      }
+    }
+  }
+  const output = payload.output
+  if (Array.isArray(output)) {
+    const imageBlock = [...output].reverse().find((block) => block
+      && typeof block === 'object'
+      && (block as { type?: unknown }).type === 'image') as {
+        data?: unknown
+        mime_type?: unknown
+        mimeType?: unknown
+      } | undefined
+    if (typeof imageBlock?.data === 'string') {
+      return {
+        base64: imageBlock.data,
+        mimeType: typeof imageBlock.mime_type === 'string'
+          ? imageBlock.mime_type
+          : typeof imageBlock.mimeType === 'string' ? imageBlock.mimeType : 'image/png',
+      }
+    }
+  }
+  return null
+}
+
 Deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (request.method !== 'POST') return response({ error: 'Method not allowed.' }, 405)
@@ -74,7 +108,7 @@ Deno.serve(async (request) => {
 
     const { data: membership, error: membershipError } = await supabase
       .from('members')
-      .select('workspace_id, workspaces!inner(id, studio_name, enabled_social_platforms)')
+      .select('workspace_id, workspaces!inner(id, studio_name, brand_color, enabled_social_platforms)')
       .eq('user_id', authData.user.id)
       .eq('role', 'owner')
       .maybeSingle()
@@ -147,7 +181,7 @@ Deno.serve(async (request) => {
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-        signal: AbortSignal.timeout(45_000),
+        signal: AbortSignal.timeout(30_000),
         body: JSON.stringify({
           systemInstruction: {
             parts: [{
@@ -277,7 +311,7 @@ Deno.serve(async (request) => {
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-          signal: AbortSignal.timeout(25_000),
+          signal: AbortSignal.timeout(20_000),
           body: JSON.stringify({
             systemInstruction: {
               parts: [{
@@ -384,10 +418,77 @@ Deno.serve(async (request) => {
     const rationale = typeof result.rationale === 'string' && result.rationale.trim()
       ? result.rationale.trim()
       : 'This post leads with audience value and offers a natural next step.'
+    let generatedImagePath: string | null = null
+    if (contentType === 'educational_solution') {
+      const verticalFormat = requestedPlatforms.some((platform) => ['tiktok', 'youtube'].includes(platform))
+      const imageModel = Deno.env.get('GEMINI_IMAGE_MODEL') || 'gemini-nano-banana-2.1'
+      const imagePrompt = [
+        'Create one original, polished social-media editorial illustration for an educational creative-studio post.',
+        `Topic and audience problem: ${angle}.`,
+        `Core advice from the caption: ${normalizedDrafts[0].caption.slice(0, 900)}.`,
+        `Visual brand accent color: ${workspace.brand_color || 'deep green'}.`,
+        `Use a ${verticalFormat ? 'vertical 9:16' : 'portrait 4:5'} composition.`,
+        'Use a clear visual metaphor and refined art direction appropriate to branding, graphic design, UI/UX, mobile apps, or web design.',
+        'Do not include text, letters, logos, watermarks, fabricated interfaces, statistics, or claims. Leave calm negative space for text to be added later in a design editor.',
+        'The visual should feel useful, relatable, warm, and professional rather than like a generic stock image.',
+      ].join(' ')
+      let imageResponse: Response
+      try {
+        imageResponse = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+          signal: AbortSignal.timeout(45_000),
+          body: JSON.stringify({
+            model: imageModel,
+            input: [{ type: 'text', text: imagePrompt }],
+          }),
+        })
+      } catch (imageError) {
+        if (imageError instanceof DOMException && imageError.name === 'TimeoutError') {
+          return response({ error: 'Gemini wrote the captions, but image generation took too long. Please try again.' }, 504)
+        }
+        throw imageError
+      }
+      if (!imageResponse.ok) {
+        const providerError = await imageResponse.text()
+        console.error('Gemini social image generation failed:', imageResponse.status, providerError.slice(0, 700))
+        return response({
+          error: 'Gemini wrote the captions but could not generate the image. Check that image generation is available for your Gemini API key, then try again.',
+        }, 502)
+      }
+      const imagePayload = await imageResponse.json()
+      const generatedImage = getGeneratedImage(imagePayload)
+      if (!generatedImage) {
+        console.error('Gemini image generation returned no image data.')
+        return response({ error: 'Gemini wrote the captions but did not return an image. Please try again.' }, 502)
+      }
+      const mimeType = generatedImage.mimeType.toLowerCase()
+      const fileExtension = mimeType === 'image/png' ? 'png' : mimeType === 'image/jpeg' ? 'jpg' : null
+      if (!fileExtension) {
+        console.error('Gemini returned an unsupported social image type:', mimeType)
+        return response({ error: 'Gemini returned an unsupported image format. Please try again.' }, 502)
+      }
+      if (generatedImage.base64.length > 20 * 1024 * 1024) {
+        return response({ error: 'Gemini returned an oversized image. Please try again.' }, 502)
+      }
+      const imageBytes = Uint8Array.from(atob(generatedImage.base64), (character) => character.charCodeAt(0))
+      if (!imageBytes.length || imageBytes.length > 15 * 1024 * 1024) {
+        return response({ error: 'Gemini returned an invalid or oversized image. Please try again.' }, 502)
+      }
+      generatedImagePath = `${membership.workspace_id}/social-content/${crypto.randomUUID()}.${fileExtension}`
+      const { error: uploadError } = await supabase.storage
+        .from('portfolio-media')
+        .upload(generatedImagePath, imageBytes, { contentType: mimeType, upsert: false })
+      if (uploadError) {
+        console.error('Could not save generated social image:', uploadError.message)
+        return response({ error: 'Gemini generated the image, but GLYPH could not save it to your studio storage.' }, 500)
+      }
+    }
 
     return response({
       content_type: contentType,
       project: selectedProject,
+      generated_image_path: generatedImagePath,
       angle: angle.slice(0, 240),
       rationale: rationale.slice(0, 500),
       drafts: normalizedDrafts.map((draft) => ({

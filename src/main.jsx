@@ -1712,11 +1712,26 @@ function ContentCalendar() {
       setLoading(false)
       return
     }
-    const signedAssets = await Promise.all((assetResult.data || []).map(async (asset) => {
+    const [signedAssets, signedPosts] = await Promise.all([
+      Promise.all((assetResult.data || []).map(async (asset) => {
       const signed = await supabase.storage.from('portfolio-media').createSignedUrl(asset.storage_path, 3600)
       return { ...asset, title: asset.portfolio_items?.title || asset.file_name, url: signed.data?.signedUrl || '' }
-    }))
-    setPosts(postResult.data || [])
+      })),
+      Promise.all((postResult.data || []).map(async (post) => {
+        if (!post.generated_image_path) return post
+        const signed = await supabase.storage.from('portfolio-media').createSignedUrl(post.generated_image_path, 3600)
+        if (signed.error) throw signed.error
+        return { ...post, generated_image_url: signed.data.signedUrl }
+      })),
+    ]).catch((signError) => {
+      setError(`Could not load a generated post image: ${signError.message}`)
+      return [null, null]
+    })
+    if (!signedAssets || !signedPosts) {
+      setLoading(false)
+      return
+    }
+    setPosts(signedPosts)
     setAssets(signedAssets)
     setPortfolioWorks(workResult.data || [])
     setLoading(false)
@@ -1758,7 +1773,7 @@ function ContentCalendar() {
     try {
       ({ data, error: generationError } = await supabase.functions.invoke('generate-social-content', {
         body: { platforms: campaignPlatforms },
-        timeout: 75_000,
+        timeout: 110_000,
       }))
     } catch (requestError) {
       setGenerating(false)
@@ -1799,12 +1814,30 @@ function ContentCalendar() {
       return
     }
     const selectedAsset = selectedWork ? assets.find((asset) => asset.portfolio_item_id === selectedWork.id) : null
+    let generatedImage = null
+    if (data.generated_image_path) {
+      const { data: signedImage, error: signedImageError } = await supabase.storage
+        .from('portfolio-media')
+        .createSignedUrl(data.generated_image_path, 3600)
+      if (signedImageError || !signedImage?.signedUrl) {
+        setError(`The post was generated, but its image could not be previewed: ${signedImageError?.message || 'Signed URL was not returned.'}`)
+        const { error: cleanupError } = await supabase.storage.from('portfolio-media').remove([data.generated_image_path])
+        if (cleanupError) console.error('Could not remove an unpreviewable generated image:', cleanupError.message)
+        return
+      }
+      generatedImage = { path: data.generated_image_path, url: signedImage.signedUrl }
+    }
+    if (contentType === 'educational_solution' && !generatedImage) {
+      setError('The educational post was generated without its image. Please try again.')
+      return
+    }
     const plannedAt = campaignSetup.planned_local
       ? new Date(campaignSetup.planned_local).toISOString()
       : null
     setCampaignDrafts({
       work: selectedWork,
       asset: selectedAsset || null,
+      generatedImage,
       contentType,
       plannedAt,
       angle: data.angle,
@@ -1844,6 +1877,7 @@ function ContentCalendar() {
       alt_text: draft.alt_text.trim(),
       content_type: campaignDrafts.contentType,
       video_generation_prompt: draft.video_prompt.trim(),
+      generated_image_path: campaignDrafts.generatedImage?.path || null,
       planned_at: campaignDrafts.plannedAt,
       status: campaignDrafts.plannedAt ? 'planned' : 'draft',
       portfolio_item_id: campaignDrafts.work?.id || null,
@@ -1862,6 +1896,14 @@ function ContentCalendar() {
     }
     setCampaignDrafts(null)
     await refresh()
+  }
+
+  async function discardCampaignDrafts() {
+    const imagePath = campaignDrafts?.generatedImage?.path
+    setCampaignDrafts(null)
+    if (!imagePath || !supabase) return
+    const { error: removeError } = await supabase.storage.from('portfolio-media').remove([imagePath])
+    if (removeError) setError(`Draft closed, but its generated image could not be removed: ${removeError.message}`)
   }
 
   async function savePost(event) {
@@ -1884,6 +1926,7 @@ function ContentCalendar() {
       status: requestedStatus,
       portfolio_asset_id: String(form.get('portfolio_asset_id') || '') || null,
       portfolio_item_id: assets.find((asset) => asset.id === String(form.get('portfolio_asset_id') || ''))?.portfolio_item_id || editor.portfolio_item_id || null,
+      generated_image_path: editor.generated_image_path || null,
       updated_at: new Date().toISOString(),
     }
     const result = editor.id
@@ -1948,7 +1991,25 @@ function ContentCalendar() {
     if (!window.confirm('Delete this planned post?')) return
     const { error: deleteError } = await supabase.from('social_content_posts').delete().eq('id', post.id).eq('workspace_id', workspace.id)
     if (deleteError) setError(deleteError.message)
-    else setPosts((current) => current.filter((entry) => entry.id !== post.id))
+    else {
+      setPosts((current) => current.filter((entry) => entry.id !== post.id))
+      if (post.generated_image_path) {
+        const { count, error: referenceError } = await supabase.from('social_content_posts')
+          .select('id', { count: 'exact', head: true })
+          .eq('workspace_id', workspace.id)
+          .eq('generated_image_path', post.generated_image_path)
+        if (referenceError) {
+          setError(`Post deleted, but generated image cleanup could not be checked: ${referenceError.message}`)
+          return
+        }
+        if (count === 0) {
+          const { error: imageDeleteError } = await supabase.storage
+            .from('portfolio-media')
+            .remove([post.generated_image_path])
+          if (imageDeleteError) setError(`Post deleted, but its generated image could not be removed: ${imageDeleteError.message}`)
+        }
+      }
+    }
   }
 
   async function copyCaption(post) {
@@ -1989,17 +2050,19 @@ function ContentCalendar() {
 
   async function downloadAsset(post) {
     const asset = assets.find((entry) => entry.id === post.portfolio_asset_id)
-    if (!asset || !asset.url) {
-      setError('This portfolio image is unavailable. Edit the post and choose another image.')
+    const imageUrl = asset?.url || post.generated_image_url
+    if (!imageUrl) {
+      setError('This post image is unavailable. Edit the post and choose or generate another image.')
       return
     }
     try {
-      const response = await fetch(asset.url)
+      const response = await fetch(imageUrl)
       if (!response.ok) throw new Error('Could not download this image.')
       const objectUrl = URL.createObjectURL(await response.blob())
       const link = document.createElement('a')
       link.href = objectUrl
-      link.download = asset.file_name
+      const extension = post.generated_image_path?.split('.').pop() || 'png'
+      link.download = asset?.file_name || `glyph-social-${post.id}.${extension}`
       document.body.append(link)
       link.click()
       link.remove()
@@ -2063,37 +2126,40 @@ function ContentCalendar() {
       <label>Post date and time<input name="planned_local" type="datetime-local" value={editor.planned_local || ''} onChange={(event) => setEditor((current) => ({ ...current, planned_local: event.target.value }))} /><small className="calendar-field-note">Local time: {timezone}. Leave blank to keep this in Drafts.</small></label>
       <label>Portfolio image<select name="portfolio_asset_id" value={editor.portfolio_asset_id || ''} onChange={(event) => setEditor((current) => ({ ...current, portfolio_asset_id: event.target.value }))}><option value="">No image selected</option>{assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.title} · {asset.file_name}</option>)}</select></label>
       {editor.portfolio_asset_id && assets.find((asset) => asset.id === editor.portfolio_asset_id)?.url && <img className="calendar-image-preview" src={assets.find((asset) => asset.id === editor.portfolio_asset_id).url} alt="Selected portfolio image" />}
+      {!editor.portfolio_asset_id && editor.generated_image_url && <img className="calendar-image-preview" src={editor.generated_image_url} alt="Generated educational post image" />}
       <label>Planning status<select name="status" value={editor.status} onChange={(event) => setEditor((current) => ({ ...current, status: event.target.value }))}>{postStatuses.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
       <p className="muted-copy">Status is your note only. GLYPH cannot see whether a post was scheduled or published on the platform.</p>
       <button className="button button-dark" disabled={saving}>{saving ? 'Saving…' : editor.id ? 'Save changes' : 'Save post'} <Check size={15} /></button>
     </form></Modal>}
     {campaignSetup && <Modal title="Generate audience-first content" onClose={() => { if (!generating) setCampaignSetup(null) }}><form onSubmit={generateCampaign}>
-      <p className="muted-copy">Gemini uses your recent content mix to alternate practical educational solutions with portfolio stories. Video platforms also get a Google Flow prompt you can edit and copy.</p>
+      <p className="muted-copy">Gemini alternates practical educational solutions with portfolio stories. Educational posts include an original generated image; video platforms also get a Google Flow prompt. Image generation may use additional Gemini API quota or incur charges.</p>
       <div className="campaign-platform-list"><b>Enabled platforms</b><div>{campaignPlatforms.map((id) => <span key={id}>{platformName(id)}</span>)}</div><small>Manage platforms in Studio settings.</small></div>
       <label>Calendar date and time<input type="datetime-local" value={campaignSetup.planned_local} onChange={(event) => setCampaignSetup((current) => ({ ...current, planned_local: event.target.value }))} /><small className="calendar-field-note">Local time: {timezone}. Leave blank to save as an unscheduled draft.</small></label>
-      <button className="button button-dark" disabled={generating || !campaignPlatforms.length}>{generating ? 'Planning useful content…' : 'Generate useful posts'} <Sparkles size={15} /></button>
+      <button className="button button-dark" disabled={generating || !campaignPlatforms.length}>{generating ? 'Writing & creating your image…' : 'Generate useful posts'} <Sparkles size={15} /></button>
     </form></Modal>}
-    {campaignDrafts && <Modal title="Review campaign drafts" onClose={() => { if (!saving) setCampaignDrafts(null) }}><div className="campaign-review">
-      <div className="campaign-review-work">{campaignDrafts.asset?.url && <img src={campaignDrafts.asset.url} alt="" />}<div><b>{campaignDrafts.contentType === 'educational_solution' ? 'Educational solution' : campaignDrafts.work.title}</b><span>{campaignDrafts.contentType === 'educational_solution' ? 'Practical, audience-first content' : `${campaignDrafts.work.segment || campaignDrafts.work.service || 'Portfolio work'} · `}{campaignDrafts.plannedAt ? new Date(campaignDrafts.plannedAt).toLocaleString() : 'No date'}</span></div></div>
+    {campaignDrafts && <Modal title="Review campaign drafts" onClose={() => { if (!saving) void discardCampaignDrafts() }}><div className="campaign-review">
+      <div className="campaign-review-work">{(campaignDrafts.generatedImage?.url || campaignDrafts.asset?.url) && <img src={campaignDrafts.generatedImage?.url || campaignDrafts.asset?.url} alt={campaignDrafts.generatedImage ? 'Generated educational post preview' : ''} />}<div><b>{campaignDrafts.contentType === 'educational_solution' ? 'Educational solution' : campaignDrafts.work.title}</b><span>{campaignDrafts.contentType === 'educational_solution' ? 'Practical, audience-first content with generated artwork' : `${campaignDrafts.work.segment || campaignDrafts.work.service || 'Portfolio work'} · `}{campaignDrafts.plannedAt ? new Date(campaignDrafts.plannedAt).toLocaleString() : 'No date'}</span></div></div>
+      {campaignDrafts.generatedImage?.url && <img className="campaign-generated-image-preview" src={campaignDrafts.generatedImage.url} alt="Full preview of generated social post artwork" />}
       <section className="campaign-angle"><b>Content angle</b><p>{campaignDrafts.angle}</p><small>{campaignDrafts.rationale}</small></section>
       <p className="muted-copy">Review and edit every draft before saving. GLYPH does not post or schedule externally.</p>
       {campaignDrafts.drafts.map((draft) => <section className="campaign-draft" key={draft.platform}><header><b>{platformName(draft.platform)}</b></header><label htmlFor={`campaign-caption-${draft.platform}`}>{platformName(draft.platform)} caption</label><textarea id={`campaign-caption-${draft.platform}`} rows={draft.platform === 'x' ? 4 : 6} maxLength={socialPlatforms.find((platform) => platform.id === draft.platform)?.limit || 5000} value={draft.caption} onChange={(event) => editCampaignCaption(draft.platform, event.target.value)} /><small className="campaign-character-count">{draft.caption.length} / {socialPlatforms.find((platform) => platform.id === draft.platform)?.limit || 5000} characters</small><label htmlFor={`campaign-alt-${draft.platform}`}>Optional image description (Gemini does not see images)</label><textarea id={`campaign-alt-${draft.platform}`} rows="2" maxLength="1000" value={draft.alt_text} onChange={(event) => setCampaignDrafts((current) => ({ ...current, drafts: current.drafts.map((entry) => entry.platform === draft.platform ? { ...entry, alt_text: event.target.value } : entry) }))} />{draft.video_prompt && <div className="campaign-video-prompt"><label htmlFor={`campaign-video-${draft.platform}`}>Google Flow video-generation prompt</label><textarea id={`campaign-video-${draft.platform}`} rows="6" maxLength="3000" value={draft.video_prompt} onChange={(event) => editCampaignVideoPrompt(draft.platform, event.target.value)} /><button className="button button-soft" type="button" onClick={() => copyVideoPromptText(draft.video_prompt, draft.platform)}><Copy size={14} /> {copiedVideoId === draft.platform ? 'Copied' : 'Copy Flow prompt'}</button><small>Paste this into Google Flow. For a portfolio story, add the project design as a reference image.</small></div>}</section>)}
-      <div className="campaign-review-actions"><button className="button button-soft" type="button" onClick={() => { setCampaignDrafts(null); openCampaign(selectedDate) }}>Generate again</button><button className="button button-dark" type="button" disabled={saving || campaignDrafts.drafts.some((draft) => !draft.caption.trim() || draft.caption.length > (socialPlatforms.find((platform) => platform.id === draft.platform)?.limit || 5000) || (['instagram', 'tiktok', 'youtube'].includes(draft.platform) && !draft.video_prompt.trim()))} onClick={saveCampaign}>{saving ? 'Saving…' : `Save ${campaignDrafts.drafts.length} drafts`} <Check size={15} /></button></div>
+      <div className="campaign-review-actions"><button className="button button-soft" type="button" onClick={() => { void discardCampaignDrafts(); openCampaign(selectedDate) }}>Generate again</button><button className="button button-dark" type="button" disabled={saving || campaignDrafts.drafts.some((draft) => !draft.caption.trim() || draft.caption.length > (socialPlatforms.find((platform) => platform.id === draft.platform)?.limit || 5000) || (['instagram', 'tiktok', 'youtube'].includes(draft.platform) && !draft.video_prompt.trim()))} onClick={saveCampaign}>{saving ? 'Saving…' : `Save ${campaignDrafts.drafts.length} drafts`} <Check size={15} /></button></div>
     </div></Modal>}
   </main>
 }
 
 function CalendarPost({ post, assets, copied, copiedAlt, copiedVideo, onEdit, onDelete, onCopy, onCopyAlt, onCopyVideo, onDownload, onStatus, onUsed }) {
   const asset = assets.find((entry) => entry.id === post.portfolio_asset_id)
+  const imageUrl = asset?.url || post.generated_image_url
   const platform = socialPlatforms.find((entry) => entry.id === post.platform)
   const time = post.planned_at ? new Date(post.planned_at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : ''
   return <article className="calendar-post">
-    {asset?.url ? <img src={asset.url} alt="" /> : <span className="calendar-post-no-image"><ImagePlus /></span>}
+    {imageUrl ? <img src={imageUrl} alt={post.generated_image_url ? 'Generated post artwork' : ''} /> : <span className="calendar-post-no-image"><ImagePlus /></span>}
     <div className="calendar-post-body"><header><b>{platformName(post.platform)}</b>{time && <time>{time}</time>}</header><p>{post.caption}</p><div className="calendar-history"><span>{post.content_type === 'educational_solution' ? 'Educational solution' : 'Portfolio story'}</span>{post.copy_count > 0 && <span>Copied {post.copy_count}×</span>}{post.used_at && <span>Used</span>}{post.published_at && <span>Published</span>}</div><label className="calendar-status">Status<select aria-label={`${platformName(post.platform)} post status`} value={post.status} onChange={(event) => onStatus(event.target.value)}>{postStatuses.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label><div className="calendar-post-actions">
       <button className="button button-soft" onClick={onCopy}><Copy size={14} /> {copied ? 'Copied' : 'Copy caption'}</button>
       {post.alt_text && <button className="button button-soft" onClick={onCopyAlt}><Copy size={14} /> {copiedAlt ? 'Alt copied' : 'Copy alt text'}</button>}
       {post.video_generation_prompt && <button className="button button-soft" onClick={onCopyVideo}><Copy size={14} /> {copiedVideo ? 'Copied' : 'Copy Flow prompt'}</button>}
-      {asset && <button className="button button-soft" onClick={onDownload}><Download size={14} /> Image</button>}
+      {imageUrl && <button className="button button-soft" onClick={onDownload}><Download size={14} /> Image</button>}
       {!post.used_at && <button className="button button-soft" onClick={onUsed}>Mark used</button>}
       <a className="button button-soft" href={platform?.url} target="_blank" rel="noreferrer"><ExternalLink size={14} /> Open</a>
       <button className="icon-button" aria-label="Edit post" onClick={onEdit}><Settings2 size={15} /></button>
