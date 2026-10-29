@@ -1784,12 +1784,18 @@ function ContentCalendar() {
       return
     }
     const selectedWork = data?.project || null
-    if ((data?.content_type === 'portfolio_story' && !portfolioWorks.some((work) => work.id === selectedWork?.id))
-      || (data?.content_type === 'educational_solution' && selectedWork)
-      || !['portfolio_story', 'educational_solution'].includes(data?.content_type)
+    const contentType = data?.content_type
+      || (selectedWork ? 'portfolio_story' : 'educational_solution')
+    if (!['portfolio_story', 'educational_solution'].includes(contentType)
+      || (contentType === 'portfolio_story' && (!selectedWork || typeof selectedWork.id !== 'string'))
+      || (contentType === 'educational_solution' && selectedWork)
       || !Array.isArray(data.drafts)
-      || data.drafts.length !== campaignPlatforms.length) {
-      setError('The generated content did not match a project in your portfolio. Please try again.')
+      || data.drafts.length !== campaignPlatforms.length
+      || data.drafts.some((draft) => !campaignPlatforms.includes(draft.platform)
+        || typeof draft.caption !== 'string'
+        || (['instagram', 'tiktok', 'youtube'].includes(draft.platform)
+          && typeof draft.video_prompt !== 'string'))) {
+      setError('The content service returned an incomplete or incompatible response. Please generate again. If it continues, reload the page to update the studio.')
       return
     }
     const selectedAsset = selectedWork ? assets.find((asset) => asset.portfolio_item_id === selectedWork.id) : null
@@ -1799,7 +1805,7 @@ function ContentCalendar() {
     setCampaignDrafts({
       work: selectedWork,
       asset: selectedAsset || null,
-      contentType: data.content_type,
+      contentType,
       plannedAt,
       angle: data.angle,
       rationale: data.rationale,
