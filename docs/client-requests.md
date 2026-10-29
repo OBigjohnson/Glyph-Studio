@@ -1,23 +1,24 @@
 # Public project requests and the client portal
 
 The public **Start a project** form captures the visitor's name, email, service,
-and brief, then emails a secure, passwordless client-portal sign-in link. The
-inquiry is stored first so it remains visible to the studio if the email cannot
-be sent. The regular sign-in page also offers this email-link option.
+and brief, and asks new clients to create and confirm a password. The inquiry
+is stored first so it remains visible to the studio if account setup needs
+attention.
 
-When the client opens the sign-in link, GLYPH links the inquiry to a client
-record, creates a shared project in the `inquiry` state, and opens the client
-portal. The client can open that project and message the studio. The request
-appears in **Studio → Requests** with a new-request badge; the studio can mark
-it contacted, accept it, or decline it. **Accept & open chat** accepts the
-request, moves the project into planning, and opens the project conversation.
-The studio and client can both message from that conversation. Declining
-archives the project and removes it from the client portal.
+With Supabase email confirmation disabled, successful signup creates an
+authenticated session immediately. GLYPH links the inquiry to a client record,
+creates a shared project in the `inquiry` state, and opens the client portal.
+The client can open that project and message the studio. The request appears in
+**Studio → Requests** with a new-request badge; the studio can mark it
+contacted, accept it, or decline it. **Accept & open chat** accepts the request,
+moves the project into planning, and opens the project conversation. The studio
+and client can both message from that conversation. Declining archives the
+project and removes it from the client portal.
 
-Configure Supabase Auth email delivery (custom SMTP for production) and allow
-the public site's `/portal` URL in the Supabase Auth redirect URL settings.
-Clients should open the latest sign-in link from the same email address used on
-their project request.
+For immediate portal entry after signup, turn off **Confirm email** in Supabase
+Auth provider settings. If confirmation is enabled, Supabase does not create an
+authenticated session until the client confirms their address; they must
+confirm first, then sign in with the email and password they created.
 
 Clients with a confirmed portal account can also submit additional project
 requests from **Start another project** in the portal. Each request creates a
