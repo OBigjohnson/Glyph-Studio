@@ -112,9 +112,13 @@ Deno.serve(async (request) => {
       ...project,
       usage: usage.get(project.id) || { posts: 0, copies: 0, lastUsedAt: null },
     }))
+    const rotationCandidates = [...candidates]
+      .sort((a, b) => a.usage.posts - b.usage.posts
+        || (a.usage.lastUsedAt || '').localeCompare(b.usage.lastUsedAt || ''))
+      .slice(0, 12)
 
     const apiKey = requiredEnv('GEMINI_API_KEY')
-    const model = Deno.env.get('GEMINI_MODEL') || 'gemini-3.8-flash'
+    const model = Deno.env.get('GEMINI_MODEL') || 'gemini-3.5-flash-lite'
     const geminiResponse = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
       {
@@ -136,12 +140,12 @@ Deno.serve(async (request) => {
                 captionCharacterLimits: Object.fromEntries(
                   requestedPlatforms.map((platform) => [platform, platformLimits[platform]]),
                 ),
-                portfolioProjects: candidates.map((project) => ({
+                portfolioProjects: rotationCandidates.map((project) => ({
                   id: project.id,
                   title: project.title,
                   service: project.service,
                   segment: project.segment,
-                  summary: project.summary.slice(0, 1200),
+                  summary: (project.summary || '').slice(0, 600),
                   published: project.published,
                   priorPosts: project.usage.posts,
                   priorCopies: project.usage.copies,
@@ -172,7 +176,7 @@ Deno.serve(async (request) => {
               },
               required: ['project_id', 'angle', 'rationale', 'drafts'],
             },
-            maxOutputTokens: 8192,
+            maxOutputTokens: 4096,
           },
         }),
       },
