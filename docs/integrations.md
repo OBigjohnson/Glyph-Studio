@@ -28,8 +28,11 @@ The workspace-private social calendar supports Instagram, TikTok, Facebook, X,
 LinkedIn, and YouTube. Choose enabled platforms in Studio settings. When
 generating content, the authenticated Supabase Edge Function reads the studio's
 portfolio project descriptions and recent post usage, then Gemini selects a
-project, identifies an angle, and returns a distinct draft for every requested
-platform. The workspace/project data and Gemini key stay server-side; only the
+project, identifies an audience pain point, and returns a distinct
+platform-native story for every requested platform. Drafts are designed to
+build from a relatable need to the project/service as a credible solution and
+finish with a natural sales invitation, rather than simply announcing a new
+design. The workspace/project data and Gemini key stay server-side; only the
 generated review drafts are returned to the browser. GLYPH does not send
 portfolio images to Gemini.
 
@@ -43,7 +46,7 @@ posts. Review generated facts for accuracy before posting.
 
 Configure the `GEMINI_API_KEY` Supabase Function secret and deploy the
 `generate-social-content` Edge Function as described in `setup.md`. The
-optional `GEMINI_MODEL` secret defaults to `gemini-3.8-flash`. Gemini usage may
+optional `GEMINI_MODEL` secret defaults to `gemini-3.5-flash-lite`. Gemini usage may
 incur Google API charges and remains subject to your Google AI plan, rate
 limits, and Supabase project limits. Never put the Gemini key in a `VITE_*`
 variable, the mobile app, or source control.
