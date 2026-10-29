@@ -582,6 +582,7 @@ function StudioShell() {
     ['/studio/calendar', 'Calendar', CalendarDays],
   ]
   const mobileTools = [
+    ['/studio/calendar?generate=1', 'Generate AI content', Sparkles],
     ['/studio/search', 'Search your studio', Search],
     ['/studio/requests', 'Project requests', MessageCircle],
     ['/studio/portfolio', 'Portfolio', Palette],
@@ -1673,6 +1674,8 @@ function platformName(platform) {
 
 function ContentCalendar() {
   const { user, workspace } = useStudioWorkspace()
+  const location = useLocation()
+  const navigate = useNavigate()
   const now = new Date()
   const [month, setMonth] = useState(new Date(now.getFullYear(), now.getMonth(), 1))
   const [selectedDate, setSelectedDate] = useState(localDateKey(now))
@@ -1751,6 +1754,12 @@ function ContentCalendar() {
     setCampaignPlatforms(workspace?.enabled_social_platforms || socialPlatforms.map(({ id }) => id))
   }, [workspace?.id, workspace?.enabled_social_platforms])
 
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get('generate') !== '1' || !workspace?.id) return
+    openCampaign(selectedDate)
+    navigate('/studio/calendar', { replace: true })
+  }, [location.search, navigate, openCampaign, selectedDate, workspace?.id])
+
   function openEditor(post = null, date = selectedDate) {
     setError('')
     setEditor(post
@@ -1758,12 +1767,12 @@ function ContentCalendar() {
       : { platform: platformFilter === 'all' ? 'instagram' : platformFilter, caption: '', alt_text: '', video_generation_prompt: '', content_type: 'educational_solution', planned_local: `${date}T09:00`, status: 'planned', portfolio_asset_id: '' })
   }
 
-  function openCampaign(date = selectedDate) {
+  const openCampaign = useCallback((date = selectedDate) => {
     setError('')
     setCampaignSetup({
       planned_local: `${date}T09:00`,
     })
-  }
+  }, [selectedDate])
 
   async function generateCampaign(event) {
     event.preventDefault()

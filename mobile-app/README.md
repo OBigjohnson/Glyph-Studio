@@ -15,6 +15,12 @@ layout, five-tab navigation, and reduced-motion-aware 3D transitions without
 changing the desktop studio. The production website must be deployed before an
 EAS build can display these visual changes.
 
+The mobile Calendar tab includes the content planner and Gemini AI draft
+generation. The account menu also has a **Generate AI content** shortcut that
+opens the generator directly. AI generation uses the same authenticated
+Supabase Edge Function and workspace preferences as the website; no Gemini or
+Supabase server secrets are stored in the mobile app.
+
 Receipts and invoices can be downloaded as PDFs from their preview. Android
 lets you choose a folder (including Downloads); iOS opens the system share
 sheet for saving or sending the PDF. The native PDF handoff requires a new
