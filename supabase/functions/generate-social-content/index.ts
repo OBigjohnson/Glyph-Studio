@@ -344,6 +344,7 @@ Deno.serve(async (request) => {
     const normalizePlatform = (value: unknown): Platform | null => {
       if (typeof value !== 'string') return null
       const normalized = value.toLowerCase().replace(/[^a-z]/g, '')
+      if (normalized === 'twitter' || normalized === 'xtwitter') return 'x'
       return platforms.find((platform) => platform.replace(/[^a-z]/g, '') === normalized) || null
     }
     const angle = typeof result.angle === 'string' && result.angle.trim()
@@ -372,7 +373,7 @@ Deno.serve(async (request) => {
           body: JSON.stringify({
             systemInstruction: {
               parts: [{
-                text: `Write only short, useful, platform-native captions for the requested platforms. The content type is ${contentType}. For educational_solution, teach one specific practical solution with clear steps; do not make a portfolio project the subject. For portfolio_story, tell an audience-centered story grounded in the supplied project. Never invent facts. Stay below 80% of each platform's maximum character count. Return one caption for every requested platform and no extras.`,
+                text: `Write only short, useful, platform-native captions for the requested platforms. The content type is ${contentType}. For educational_solution, teach one specific practical solution with clear steps; do not make a portfolio project the subject. For portfolio_story, tell an audience-centered story grounded in the supplied project. Never invent facts. Each maxCharacters value is the exact maximum length for the caption body before the system appends its CTA; do not include a CTA or URL. For X, write one concise, compelling sentence that fits comfortably within its body limit. Return one caption for every requested platform and no extras.`,
               }],
             },
             contents: [{
@@ -389,8 +390,7 @@ Deno.serve(async (request) => {
                   } : null,
                   repairPlatforms: invalidCaptionPlatforms.map((platform) => ({
                     platform,
-                      maxCharacters: platformLimits[platform] - ctaByPlatform[platform].length,
-                      ctaWillBeAppended: ctaByPlatform[platform],
+                    maxCharacters: platformLimits[platform] - ctaByPlatform[platform].length,
                   })),
                 }),
               }],
@@ -446,6 +446,30 @@ Deno.serve(async (request) => {
       } else {
         console.error('Gemini caption repair failed with status:', repairResponse.status)
       }
+    }
+
+    if (requestedPlatforms.includes('x')) {
+      const xDraft = draftsByPlatform.get('x')
+      let xCaption = typeof xDraft?.caption === 'string' ? xDraft.caption.trim() : ''
+      if (!xCaption) {
+        const otherCaption = [...draftsByPlatform.entries()]
+          .find(([platform, draft]) => platform !== 'x'
+            && typeof draft.caption === 'string'
+            && draft.caption.trim())
+        xCaption = typeof otherCaption?.[1].caption === 'string'
+          ? otherCaption[1].caption.trim()
+          : `A practical way forward starts with one clear step: ${angle}`
+      }
+
+      const xBodyLimit = platformLimits.x - ctaByPlatform.x.length
+      if (xCaption.length > xBodyLimit) {
+        const clipped = xCaption.slice(0, Math.max(0, xBodyLimit - 1))
+        const lastWordBoundary = clipped.lastIndexOf(' ')
+        xCaption = `${clipped.slice(0, lastWordBoundary > xBodyLimit * 0.6
+          ? lastWordBoundary
+          : clipped.length).trimEnd()}…`
+      }
+      draftsByPlatform.set('x', { ...xDraft, platform: 'x', caption: xCaption })
     }
 
     const normalizedDrafts = requestedPlatforms.map((platform) => {
