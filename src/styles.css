@@ -1308,6 +1308,11 @@ input:focus,textarea:focus,select:focus{border-color:var(--blue);box-shadow:0 0 
 .campaign-draft > header .button { min-height: 30px; padding: 5px 8px; font-size: 10px; }
 .campaign-draft > label { color: var(--studio-muted); font-size: 10px; font-weight: 600; }
 .campaign-draft textarea { width: 100%; min-height: 88px; resize: vertical; line-height: 1.5; white-space: pre-wrap; }
+.campaign-video-prompt { display: grid; gap: 7px; padding: 11px; border: 1px solid var(--studio-line); background: #f7f8f6; }
+.campaign-video-prompt > label { color: var(--studio-muted); font-size: 10px; font-weight: 650; }
+.campaign-video-prompt textarea { min-height: 120px; }
+.campaign-video-prompt .button { justify-self: start; }
+.campaign-video-prompt small { color: var(--studio-muted); font-size: 10px; line-height: 1.5; }
 .campaign-character-count { justify-self: end; color: var(--studio-muted); font-size: 10px; }
 .campaign-character-warning { color: #9b4b13; }
 .campaign-review-actions { display: flex; justify-content: space-between; gap: 8px; padding-top: 5px; }

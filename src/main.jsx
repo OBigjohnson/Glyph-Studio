@@ -1681,6 +1681,7 @@ function ContentCalendar() {
   const [saving, setSaving] = useState(false)
   const [copiedId, setCopiedId] = useState('')
   const [copiedAltId, setCopiedAltId] = useState('')
+  const [copiedVideoId, setCopiedVideoId] = useState('')
   const [campaignSetup, setCampaignSetup] = useState(null)
   const [campaignDrafts, setCampaignDrafts] = useState(null)
   const [campaignPlatforms, setCampaignPlatforms] = useState([])
@@ -1692,7 +1693,7 @@ function ContentCalendar() {
     setError('')
     const [postResult, assetResult, workResult] = await Promise.all([
       supabase.from('social_content_posts')
-        .select('id, platform, caption, alt_text, planned_at, status, portfolio_asset_id, portfolio_item_id, copied_at, copy_count, used_at, published_at, created_at, updated_at')
+        .select('id, platform, caption, alt_text, content_type, video_generation_prompt, planned_at, status, portfolio_asset_id, portfolio_item_id, copied_at, copy_count, used_at, published_at, created_at, updated_at')
         .eq('workspace_id', workspace.id)
         .order('planned_at', { ascending: true, nullsFirst: false }),
       supabase.from('portfolio_assets')
@@ -1733,7 +1734,7 @@ function ContentCalendar() {
     setError('')
     setEditor(post
       ? { ...post, planned_local: localDateTimeValue(post.planned_at), portfolio_asset_id: post.portfolio_asset_id || '' }
-      : { platform: platformFilter === 'all' ? 'instagram' : platformFilter, caption: '', alt_text: '', planned_local: `${date}T09:00`, status: 'planned', portfolio_asset_id: '' })
+      : { platform: platformFilter === 'all' ? 'instagram' : platformFilter, caption: '', alt_text: '', video_generation_prompt: '', content_type: 'educational_solution', planned_local: `${date}T09:00`, status: 'planned', portfolio_asset_id: '' })
   }
 
   function openCampaign(date = selectedDate) {
@@ -1782,20 +1783,23 @@ function ContentCalendar() {
       setError(data?.error || functionErrorMessage || generationError?.message || 'Could not generate social content.')
       return
     }
-    const selectedWork = data?.project
-    if (!portfolioWorks.some((work) => work.id === selectedWork?.id)
+    const selectedWork = data?.project || null
+    if ((data?.content_type === 'portfolio_story' && !portfolioWorks.some((work) => work.id === selectedWork?.id))
+      || (data?.content_type === 'educational_solution' && selectedWork)
+      || !['portfolio_story', 'educational_solution'].includes(data?.content_type)
       || !Array.isArray(data.drafts)
       || data.drafts.length !== campaignPlatforms.length) {
       setError('The generated content did not match a project in your portfolio. Please try again.')
       return
     }
-    const selectedAsset = assets.find((asset) => asset.portfolio_item_id === selectedWork.id)
+    const selectedAsset = selectedWork ? assets.find((asset) => asset.portfolio_item_id === selectedWork.id) : null
     const plannedAt = campaignSetup.planned_local
       ? new Date(campaignSetup.planned_local).toISOString()
       : null
     setCampaignDrafts({
       work: selectedWork,
       asset: selectedAsset || null,
+      contentType: data.content_type,
       plannedAt,
       angle: data.angle,
       rationale: data.rationale,
@@ -1808,6 +1812,13 @@ function ContentCalendar() {
     setCampaignDrafts((current) => ({
       ...current,
       drafts: current.drafts.map((draft) => draft.platform === platform ? { ...draft, caption } : draft),
+    }))
+  }
+
+  function editCampaignVideoPrompt(platform, video_prompt) {
+    setCampaignDrafts((current) => ({
+      ...current,
+      drafts: current.drafts.map((draft) => draft.platform === platform ? { ...draft, video_prompt } : draft),
     }))
   }
 
@@ -1825,9 +1836,11 @@ function ContentCalendar() {
       platform: draft.platform,
       caption: draft.caption.trim(),
       alt_text: draft.alt_text.trim(),
+      content_type: campaignDrafts.contentType,
+      video_generation_prompt: draft.video_prompt.trim(),
       planned_at: campaignDrafts.plannedAt,
       status: campaignDrafts.plannedAt ? 'planned' : 'draft',
-      portfolio_item_id: campaignDrafts.work.id,
+      portfolio_item_id: campaignDrafts.work?.id || null,
       portfolio_asset_id: campaignDrafts.asset?.id || null,
     })))
     setSaving(false)
@@ -1859,6 +1872,8 @@ function ContentCalendar() {
       platform: String(form.get('platform')),
       caption: String(form.get('caption')).trim(),
       alt_text: String(form.get('alt_text') || '').trim(),
+      content_type: editor.content_type || 'educational_solution',
+      video_generation_prompt: String(form.get('video_generation_prompt') || '').trim(),
       planned_at: dateValue ? new Date(dateValue).toISOString() : null,
       status: requestedStatus,
       portfolio_asset_id: String(form.get('portfolio_asset_id') || '') || null,
@@ -1952,6 +1967,20 @@ function ContentCalendar() {
     }
   }
 
+  async function copyVideoPrompt(post) {
+    await copyVideoPromptText(post.video_generation_prompt, post.id)
+  }
+
+  async function copyVideoPromptText(prompt, key) {
+    try {
+      await navigator.clipboard.writeText(prompt)
+      setCopiedVideoId(key)
+      window.setTimeout(() => setCopiedVideoId(''), 1800)
+    } catch {
+      setError('Clipboard access is unavailable. Select and copy the Google Flow prompt manually.')
+    }
+  }
+
   async function downloadAsset(post) {
     const asset = assets.find((entry) => entry.id === post.portfolio_asset_id)
     if (!asset || !asset.url) {
@@ -1989,8 +2018,8 @@ function ContentCalendar() {
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
 
   return <main className="studio-page calendar-page">
-    <StudioPageHeader kicker="SOCIAL / PLAN & HAND OFF" title="Make a date<br />with your audience." action={<div className="calendar-header-actions"><button className="button button-soft" disabled={!workspace || !portfolioWorks.length || !campaignPlatforms.length} onClick={() => openCampaign(selectedDate)}><Sparkles size={15} /> Generate AI content</button><button className="button button-dark" disabled={!workspace} onClick={() => openEditor(null, selectedDate)}><Plus size={16} /> Plan a post</button></div>} />
-    <div className="calendar-note"><CalendarDays size={18} /><p>Gemini chooses a project from your portfolio and prepares platform-specific drafts. Review, edit, copy, then publish manually; GLYPH records your usage and does not publish automatically.</p></div>
+    <StudioPageHeader kicker="SOCIAL / PLAN & HAND OFF" title="Make a date<br />with your audience." action={<div className="calendar-header-actions"><button className="button button-soft" disabled={!workspace || !campaignPlatforms.length} onClick={() => openCampaign(selectedDate)}><Sparkles size={15} /> Generate AI content</button><button className="button button-dark" disabled={!workspace} onClick={() => openEditor(null, selectedDate)}><Plus size={16} /> Plan a post</button></div>} />
+    <div className="calendar-note"><CalendarDays size={18} /><p>Gemini balances practical educational solutions with portfolio stories, then prepares platform-specific drafts. Instagram, TikTok, and YouTube drafts include editable Google Flow video prompts. Review, edit, copy, then publish manually.</p></div>
     {error && <p className="notice-error">{error}</p>}
     <div className="calendar-toolbar">
       <div className="calendar-month-controls"><button className="icon-button" aria-label="Previous month" onClick={() => { const nextMonth = new Date(month.getFullYear(), month.getMonth() - 1, 1); setMonth(nextMonth); setSelectedDate(localDateKey(nextMonth)) }}><ChevronLeft /></button><h2>{monthLabel}</h2><button className="icon-button" aria-label="Next month" onClick={() => { const nextMonth = new Date(month.getFullYear(), month.getMonth() + 1, 1); setMonth(nextMonth); setSelectedDate(localDateKey(nextMonth)) }}><ChevronRight /></button><button className="button button-soft" onClick={() => { const today = new Date(); setMonth(new Date(today.getFullYear(), today.getMonth(), 1)); setSelectedDate(localDateKey(today)) }}>Today</button></div>
@@ -2014,16 +2043,17 @@ function ContentCalendar() {
         </section>
         <aside className="calendar-agenda">
           <header><div><p className="kicker">DAY PLAN</p><h2>{new Date(`${selectedDate}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</h2></div><button className="icon-button" aria-label="Plan a post for this day" onClick={() => openEditor(null, selectedDate)}><Plus /></button></header>
-          {selectedPosts.length ? <div className="calendar-post-list">{selectedPosts.map((post) => <CalendarPost key={post.id} post={post} assets={assets} copied={copiedId === post.id} copiedAlt={copiedAltId === post.id} onEdit={() => openEditor(post)} onDelete={() => removePost(post)} onCopy={() => copyCaption(post)} onCopyAlt={() => copyImageDescription(post)} onDownload={() => downloadAsset(post)} onStatus={(status) => changeStatus(post, status)} onUsed={() => markPostUsed(post)} />)}</div> : <p className="empty-copy">Nothing planned for this day.</p>}
+          {selectedPosts.length ? <div className="calendar-post-list">{selectedPosts.map((post) => <CalendarPost key={post.id} post={post} assets={assets} copied={copiedId === post.id} copiedAlt={copiedAltId === post.id} copiedVideo={copiedVideoId === post.id} onEdit={() => openEditor(post)} onDelete={() => removePost(post)} onCopy={() => copyCaption(post)} onCopyAlt={() => copyImageDescription(post)} onCopyVideo={() => copyVideoPrompt(post)} onDownload={() => downloadAsset(post)} onStatus={(status) => changeStatus(post, status)} onUsed={() => markPostUsed(post)} />)}</div> : <p className="empty-copy">Nothing planned for this day.</p>}
         </aside>
       </div>
-      <section className="calendar-drafts"><div className="studio-section-heading"><div><p className="kicker">NO DATE SET</p><h2>Drafts</h2></div><span>{draftPosts.length}</span></div>{draftPosts.length ? <div className="calendar-post-list">{draftPosts.map((post) => <CalendarPost key={post.id} post={post} assets={assets} copied={copiedId === post.id} copiedAlt={copiedAltId === post.id} onEdit={() => openEditor(post)} onDelete={() => removePost(post)} onCopy={() => copyCaption(post)} onCopyAlt={() => copyImageDescription(post)} onDownload={() => downloadAsset(post)} onStatus={(status) => changeStatus(post, status)} onUsed={() => markPostUsed(post)} />)}</div> : <p className="empty-copy">Unscheduled drafts will collect here.</p>}
+      <section className="calendar-drafts"><div className="studio-section-heading"><div><p className="kicker">NO DATE SET</p><h2>Drafts</h2></div><span>{draftPosts.length}</span></div>{draftPosts.length ? <div className="calendar-post-list">{draftPosts.map((post) => <CalendarPost key={post.id} post={post} assets={assets} copied={copiedId === post.id} copiedAlt={copiedAltId === post.id} copiedVideo={copiedVideoId === post.id} onEdit={() => openEditor(post)} onDelete={() => removePost(post)} onCopy={() => copyCaption(post)} onCopyAlt={() => copyImageDescription(post)} onCopyVideo={() => copyVideoPrompt(post)} onDownload={() => downloadAsset(post)} onStatus={(status) => changeStatus(post, status)} onUsed={() => markPostUsed(post)} />)}</div> : <p className="empty-copy">Unscheduled drafts will collect here.</p>}
     </section>
     </>}
   {editor && <Modal title={editor.id ? 'Edit planned post' : 'Plan a social post'} onClose={() => { if (!saving) setEditor(null) }}><form onSubmit={savePost}>
       <label>Platform<select name="platform" value={editor.platform} onChange={(event) => setEditor((current) => ({ ...current, platform: event.target.value }))}>{socialPlatforms.map((platform) => <option key={platform.id} value={platform.id}>{platform.label}</option>)}</select></label>
       <label>Caption<textarea name="caption" required maxLength={5000} rows="5" value={editor.caption} onChange={(event) => setEditor((current) => ({ ...current, caption: event.target.value }))} placeholder="Write the caption for this platform…" /></label>
       <label>Image description for accessibility<textarea name="alt_text" maxLength={1000} rows="2" value={editor.alt_text || ''} onChange={(event) => setEditor((current) => ({ ...current, alt_text: event.target.value }))} placeholder="Describe what is visibly in the image…" /></label>
+      {['instagram', 'tiktok', 'youtube'].includes(editor.platform) && <label>Google Flow video prompt<textarea name="video_generation_prompt" maxLength={3000} rows="5" value={editor.video_generation_prompt || ''} onChange={(event) => setEditor((current) => ({ ...current, video_generation_prompt: event.target.value }))} placeholder="Describe the short-form video to generate in Google Flow…" /></label>}
       <label>Post date and time<input name="planned_local" type="datetime-local" value={editor.planned_local || ''} onChange={(event) => setEditor((current) => ({ ...current, planned_local: event.target.value }))} /><small className="calendar-field-note">Local time: {timezone}. Leave blank to keep this in Drafts.</small></label>
       <label>Portfolio image<select name="portfolio_asset_id" value={editor.portfolio_asset_id || ''} onChange={(event) => setEditor((current) => ({ ...current, portfolio_asset_id: event.target.value }))}><option value="">No image selected</option>{assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.title} · {asset.file_name}</option>)}</select></label>
       {editor.portfolio_asset_id && assets.find((asset) => asset.id === editor.portfolio_asset_id)?.url && <img className="calendar-image-preview" src={assets.find((asset) => asset.id === editor.portfolio_asset_id).url} alt="Selected portfolio image" />}
@@ -2031,31 +2061,32 @@ function ContentCalendar() {
       <p className="muted-copy">Status is your note only. GLYPH cannot see whether a post was scheduled or published on the platform.</p>
       <button className="button button-dark" disabled={saving}>{saving ? 'Saving…' : editor.id ? 'Save changes' : 'Save post'} <Check size={15} /></button>
     </form></Modal>}
-    {campaignSetup && <Modal title="Generate from your portfolio" onClose={() => { if (!generating) setCampaignSetup(null) }}><form onSubmit={generateCampaign}>
-      <p className="muted-copy">Gemini will review project descriptions and previous content usage, select a project and content angle, then write a distinct draft for each enabled platform.</p>
+    {campaignSetup && <Modal title="Generate audience-first content" onClose={() => { if (!generating) setCampaignSetup(null) }}><form onSubmit={generateCampaign}>
+      <p className="muted-copy">Gemini uses your recent content mix to alternate practical educational solutions with portfolio stories. Video platforms also get a Google Flow prompt you can edit and copy.</p>
       <div className="campaign-platform-list"><b>Enabled platforms</b><div>{campaignPlatforms.map((id) => <span key={id}>{platformName(id)}</span>)}</div><small>Manage platforms in Studio settings.</small></div>
       <label>Calendar date and time<input type="datetime-local" value={campaignSetup.planned_local} onChange={(event) => setCampaignSetup((current) => ({ ...current, planned_local: event.target.value }))} /><small className="calendar-field-note">Local time: {timezone}. Leave blank to save as an unscheduled draft.</small></label>
-      <button className="button button-dark" disabled={generating || !campaignPlatforms.length}>{generating ? 'Studying your portfolio…' : 'Choose project & generate drafts'} <Sparkles size={15} /></button>
+      <button className="button button-dark" disabled={generating || !campaignPlatforms.length}>{generating ? 'Planning useful content…' : 'Generate useful posts'} <Sparkles size={15} /></button>
     </form></Modal>}
     {campaignDrafts && <Modal title="Review campaign drafts" onClose={() => { if (!saving) setCampaignDrafts(null) }}><div className="campaign-review">
-      <div className="campaign-review-work">{campaignDrafts.asset?.url && <img src={campaignDrafts.asset.url} alt="" />}<div><b>{campaignDrafts.work.title}</b><span>{campaignDrafts.work.segment || campaignDrafts.work.service || 'Portfolio work'} · {campaignDrafts.plannedAt ? new Date(campaignDrafts.plannedAt).toLocaleString() : 'No date'}</span></div></div>
+      <div className="campaign-review-work">{campaignDrafts.asset?.url && <img src={campaignDrafts.asset.url} alt="" />}<div><b>{campaignDrafts.contentType === 'educational_solution' ? 'Educational solution' : campaignDrafts.work.title}</b><span>{campaignDrafts.contentType === 'educational_solution' ? 'Practical, audience-first content' : `${campaignDrafts.work.segment || campaignDrafts.work.service || 'Portfolio work'} · `}{campaignDrafts.plannedAt ? new Date(campaignDrafts.plannedAt).toLocaleString() : 'No date'}</span></div></div>
       <section className="campaign-angle"><b>Content angle</b><p>{campaignDrafts.angle}</p><small>{campaignDrafts.rationale}</small></section>
       <p className="muted-copy">Review and edit every draft before saving. GLYPH does not post or schedule externally.</p>
-      {campaignDrafts.drafts.map((draft) => <section className="campaign-draft" key={draft.platform}><header><b>{platformName(draft.platform)}</b></header><label htmlFor={`campaign-caption-${draft.platform}`}>{platformName(draft.platform)} caption</label><textarea id={`campaign-caption-${draft.platform}`} rows={draft.platform === 'x' ? 4 : 6} maxLength={socialPlatforms.find((platform) => platform.id === draft.platform)?.limit || 5000} value={draft.caption} onChange={(event) => editCampaignCaption(draft.platform, event.target.value)} /><small className="campaign-character-count">{draft.caption.length} / {socialPlatforms.find((platform) => platform.id === draft.platform)?.limit || 5000} characters</small><label htmlFor={`campaign-alt-${draft.platform}`}>Optional image description (Gemini does not see images)</label><textarea id={`campaign-alt-${draft.platform}`} rows="2" maxLength="1000" value={draft.alt_text} onChange={(event) => setCampaignDrafts((current) => ({ ...current, drafts: current.drafts.map((entry) => entry.platform === draft.platform ? { ...entry, alt_text: event.target.value } : entry) }))} /></section>)}
-      <div className="campaign-review-actions"><button className="button button-soft" type="button" onClick={() => { setCampaignDrafts(null); openCampaign(selectedDate) }}>Generate again</button><button className="button button-dark" type="button" disabled={saving || campaignDrafts.drafts.some((draft) => !draft.caption.trim() || draft.caption.length > (socialPlatforms.find((platform) => platform.id === draft.platform)?.limit || 5000))} onClick={saveCampaign}>{saving ? 'Saving…' : `Save ${campaignDrafts.drafts.length} drafts`} <Check size={15} /></button></div>
+      {campaignDrafts.drafts.map((draft) => <section className="campaign-draft" key={draft.platform}><header><b>{platformName(draft.platform)}</b></header><label htmlFor={`campaign-caption-${draft.platform}`}>{platformName(draft.platform)} caption</label><textarea id={`campaign-caption-${draft.platform}`} rows={draft.platform === 'x' ? 4 : 6} maxLength={socialPlatforms.find((platform) => platform.id === draft.platform)?.limit || 5000} value={draft.caption} onChange={(event) => editCampaignCaption(draft.platform, event.target.value)} /><small className="campaign-character-count">{draft.caption.length} / {socialPlatforms.find((platform) => platform.id === draft.platform)?.limit || 5000} characters</small><label htmlFor={`campaign-alt-${draft.platform}`}>Optional image description (Gemini does not see images)</label><textarea id={`campaign-alt-${draft.platform}`} rows="2" maxLength="1000" value={draft.alt_text} onChange={(event) => setCampaignDrafts((current) => ({ ...current, drafts: current.drafts.map((entry) => entry.platform === draft.platform ? { ...entry, alt_text: event.target.value } : entry) }))} />{draft.video_prompt && <div className="campaign-video-prompt"><label htmlFor={`campaign-video-${draft.platform}`}>Google Flow video-generation prompt</label><textarea id={`campaign-video-${draft.platform}`} rows="6" maxLength="3000" value={draft.video_prompt} onChange={(event) => editCampaignVideoPrompt(draft.platform, event.target.value)} /><button className="button button-soft" type="button" onClick={() => copyVideoPromptText(draft.video_prompt, draft.platform)}><Copy size={14} /> {copiedVideoId === draft.platform ? 'Copied' : 'Copy Flow prompt'}</button><small>Paste this into Google Flow. For a portfolio story, add the project design as a reference image.</small></div>}</section>)}
+      <div className="campaign-review-actions"><button className="button button-soft" type="button" onClick={() => { setCampaignDrafts(null); openCampaign(selectedDate) }}>Generate again</button><button className="button button-dark" type="button" disabled={saving || campaignDrafts.drafts.some((draft) => !draft.caption.trim() || draft.caption.length > (socialPlatforms.find((platform) => platform.id === draft.platform)?.limit || 5000) || (['instagram', 'tiktok', 'youtube'].includes(draft.platform) && !draft.video_prompt.trim()))} onClick={saveCampaign}>{saving ? 'Saving…' : `Save ${campaignDrafts.drafts.length} drafts`} <Check size={15} /></button></div>
     </div></Modal>}
   </main>
 }
 
-function CalendarPost({ post, assets, copied, copiedAlt, onEdit, onDelete, onCopy, onCopyAlt, onDownload, onStatus, onUsed }) {
+function CalendarPost({ post, assets, copied, copiedAlt, copiedVideo, onEdit, onDelete, onCopy, onCopyAlt, onCopyVideo, onDownload, onStatus, onUsed }) {
   const asset = assets.find((entry) => entry.id === post.portfolio_asset_id)
   const platform = socialPlatforms.find((entry) => entry.id === post.platform)
   const time = post.planned_at ? new Date(post.planned_at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : ''
   return <article className="calendar-post">
     {asset?.url ? <img src={asset.url} alt="" /> : <span className="calendar-post-no-image"><ImagePlus /></span>}
-    <div className="calendar-post-body"><header><b>{platformName(post.platform)}</b>{time && <time>{time}</time>}</header><p>{post.caption}</p><div className="calendar-history">{post.copy_count > 0 && <span>Copied {post.copy_count}×</span>}{post.used_at && <span>Used</span>}{post.published_at && <span>Published</span>}</div><label className="calendar-status">Status<select aria-label={`${platformName(post.platform)} post status`} value={post.status} onChange={(event) => onStatus(event.target.value)}>{postStatuses.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label><div className="calendar-post-actions">
+    <div className="calendar-post-body"><header><b>{platformName(post.platform)}</b>{time && <time>{time}</time>}</header><p>{post.caption}</p><div className="calendar-history"><span>{post.content_type === 'educational_solution' ? 'Educational solution' : 'Portfolio story'}</span>{post.copy_count > 0 && <span>Copied {post.copy_count}×</span>}{post.used_at && <span>Used</span>}{post.published_at && <span>Published</span>}</div><label className="calendar-status">Status<select aria-label={`${platformName(post.platform)} post status`} value={post.status} onChange={(event) => onStatus(event.target.value)}>{postStatuses.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label><div className="calendar-post-actions">
       <button className="button button-soft" onClick={onCopy}><Copy size={14} /> {copied ? 'Copied' : 'Copy caption'}</button>
       {post.alt_text && <button className="button button-soft" onClick={onCopyAlt}><Copy size={14} /> {copiedAlt ? 'Alt copied' : 'Copy alt text'}</button>}
+      {post.video_generation_prompt && <button className="button button-soft" onClick={onCopyVideo}><Copy size={14} /> {copiedVideo ? 'Copied' : 'Copy Flow prompt'}</button>}
       {asset && <button className="button button-soft" onClick={onDownload}><Download size={14} /> Image</button>}
       {!post.used_at && <button className="button button-soft" onClick={onUsed}>Mark used</button>}
       <a className="button button-soft" href={platform?.url} target="_blank" rel="noreferrer"><ExternalLink size={14} /> Open</a>

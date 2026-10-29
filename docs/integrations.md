@@ -27,27 +27,30 @@ are not emailed. Manual verified bank transfers remain supported.
 The workspace-private social calendar supports Instagram, TikTok, Facebook, X,
 LinkedIn, and YouTube. Choose enabled platforms in Studio settings. When
 generating content, the authenticated Supabase Edge Function reads the studio's
-portfolio project descriptions and recent post usage, then Gemini selects a
-project, identifies an audience pain point, and returns a distinct
-platform-native story for every requested platform. Drafts are designed to
-build from a relatable need to the project/service as a credible solution and
-finish with a natural sales invitation, rather than simply announcing a new
-design. The workspace/project data and Gemini key stay server-side; only the
-generated review drafts are returned to the browser. GLYPH does not send
-portfolio images to Gemini.
+portfolio project descriptions and recent post usage, then Gemini balances
+educational solution posts with portfolio stories so the calendar is not limited
+to showcasing work. Educational posts provide actionable advice; portfolio
+stories connect a real audience need to a relevant project/service. Captions
+are distinct and platform-native, with natural sales invitations rather than
+generic design announcements. Instagram, TikTok, and YouTube drafts include an
+editable Google Flow prompt for a vertical short-form video. Prompts guide Flow
+to preserve supplied project artwork when used as a visual reference, or to
+create relevant explanatory motion for educational posts. The workspace/project
+data and Gemini key stay server-side; only generated drafts are returned to the
+browser. GLYPH does not send portfolio images to Gemini.
 
-Review and edit each caption and image description before saving. Posts keep a
-reference to their portfolio project, and copy counts, manual "used" actions,
-and manually recorded publication times inform future project rotation. Copy
-captions, download a selected image, and open each platform to publish
-manually. This remains a planning and handoff workflow: GLYPH does not connect
-social accounts, transmit content to providers, schedule jobs, or publish
-posts. Review generated facts for accuracy before posting.
+Review and edit each caption, image description, and video prompt before saving.
+Posts keep an optional reference to their portfolio project and a content type;
+recent content history informs topic rotation. Copy captions and Flow prompts,
+download a selected image, and open each platform to publish manually. This
+remains a planning and handoff workflow: GLYPH does not connect social accounts,
+transmit content to providers, schedule jobs, or publish posts. Review generated
+facts and educational advice for accuracy before posting.
 
 Configure the `GEMINI_API_KEY` Supabase Function secret and deploy the
 `generate-social-content` Edge Function as described in `setup.md`. The
-optional `GEMINI_MODEL` secret defaults to `gemini-3.5-flash-lite`. Gemini usage may
-incur Google API charges and remains subject to your Google AI plan, rate
+optional `GEMINI_MODEL` secret defaults to `gemini-3.5-flash-lite`. Gemini usage
+may incur Google API charges and remains subject to your Google AI plan, rate
 limits, and Supabase project limits. Never put the Gemini key in a `VITE_*`
 variable, the mobile app, or source control.
 
