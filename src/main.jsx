@@ -311,17 +311,29 @@ function Contact() {
   const { studio } = usePublicStudio()
   const { user, signUp } = useAuth()
   const navigate = useNavigate()
+  const [contactEmail, setContactEmail] = useState('')
   const [sent, setSent] = useState(false)
   const [successMessage, setSuccessMessage] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const hasMatchingClientSession = Boolean(
+    user?.email
+    && contactEmail.trim().toLowerCase() === user.email.toLowerCase()
+    && user.email.toLowerCase() !== studioOwnerEmail,
+  )
+
   async function submit(event) {
     event.preventDefault()
     if (!supabase) { setError(supabaseConfigMessage); return }
     const form = event.currentTarget
     const values = Object.fromEntries(new FormData(form))
     const email = String(values.email).trim().toLowerCase()
-    if (!user && values.password !== values.confirmPassword) {
+    const hasMatchingClientSession = Boolean(
+      user?.email
+      && email === user.email.toLowerCase()
+      && user.email.toLowerCase() !== studioOwnerEmail,
+    )
+    if (!hasMatchingClientSession && values.password !== values.confirmPassword) {
       setError('The passwords do not match.')
       return
     }
@@ -338,15 +350,7 @@ function Contact() {
       setBusy(false)
       return
     }
-    if (user) {
-      if (user.email?.toLowerCase() !== email || user.email?.toLowerCase() === studioOwnerEmail) {
-        setSuccessMessage(user.email?.toLowerCase() === studioOwnerEmail
-          ? 'Your request is saved in the Studio Requests inbox. The client can create their portal account using the email you entered.'
-          : 'Your request is saved. Sign in with the email address you entered to connect it to your portal.')
-        setSent(true)
-        setBusy(false)
-        return
-      }
+    if (hasMatchingClientSession) {
       const { error: claimError } = await supabase.rpc('claim_client_project_requests')
       if (claimError) {
         setSuccessMessage('Your request is saved, but portal setup did not finish. Open the client portal again to retry.')
@@ -385,7 +389,7 @@ function Contact() {
     setSent(true)
     setBusy(false)
   }
-  return <div className="public-site marketing-site"><SiteNav /><main className="wrap contact-page"><div className="contact-intro"><p className="kicker">LET’S GET INTO IT</p><h1>Tell us what<br />you’re <em>dreaming.</em></h1><p>Give {studio?.studio_name || 'the studio'} the short version. We’ll take it from there.</p><div className="contact-mark">✳</div></div><div className="contact-form panel">{sent ? <div className="form-success"><Check /><h2>Request received.</h2><p>{successMessage}</p>{error && <p className="notice-error">{error}</p>}<Link className="button button-dark" to="/sign-in?returnTo=%2Fportal">Go to client portal sign-in <ArrowRight size={16} /></Link></div> : <form onSubmit={submit}><label>Your name<input name="name" required maxLength="120" autoComplete="name" /></label><label>Your email<input name="email" required type="email" maxLength="254" autoComplete="email" /></label><label>What are you looking for?<select name="service" defaultValue=""><option value="" disabled>Pick a starting point</option>{(studio?.services?.length ? studio.services : services).map((service) => <option key={service}>{service}</option>)}<option>Something else</option></select></label><label>A little about it<textarea name="message" required minLength="10" maxLength="5000" rows="5" /></label>{!user && <><label>Create a client portal password<input name="password" required type="password" minLength="8" autoComplete="new-password" /></label><label>Confirm password<input name="confirmPassword" required type="password" minLength="8" autoComplete="new-password" /></label><small className="muted-copy">Use this email and password to sign in to your client portal.</small></>}{user && user.email?.toLowerCase() !== studioOwnerEmail && <p className="muted-copy">You’re signed in as {user.email}. Use that email address to connect this request to your client portal.</p>}{error && <p className="notice-error">{error}</p>}<button className="button button-dark button-wide" disabled={busy}>{busy ? 'Creating your request…' : user ? 'Send project request' : 'Send request & open portal'} <Send size={16} /></button></form>}</div></main><SiteFooter /></div>
+  return <div className="public-site marketing-site"><SiteNav /><main className="wrap contact-page"><div className="contact-intro"><p className="kicker">LET’S GET INTO IT</p><h1>Tell us what<br />you’re <em>dreaming.</em></h1><p>Give {studio?.studio_name || 'the studio'} the short version. We’ll take it from there.</p><div className="contact-mark">✳</div></div><div className="contact-form panel">{sent ? <div className="form-success"><Check /><h2>Request received.</h2><p>{successMessage}</p>{error && <p className="notice-error">{error}</p>}<Link className="button button-dark" to="/sign-in?returnTo=%2Fportal">Go to client portal sign-in <ArrowRight size={16} /></Link></div> : <form onSubmit={submit}><label>Your name<input name="name" required maxLength="120" autoComplete="name" /></label><label>Your email<input name="email" required type="email" maxLength="254" autoComplete="email" value={contactEmail} onChange={(event) => setContactEmail(event.target.value)} /></label><label>What are you looking for?<select name="service" defaultValue=""><option value="" disabled>Pick a starting point</option>{(studio?.services?.length ? studio.services : services).map((service) => <option key={service}>{service}</option>)}<option>Something else</option></select></label><label>A little about it<textarea name="message" required minLength="10" maxLength="5000" rows="5" /></label>{!hasMatchingClientSession && <><label>Create a client portal password<input name="password" required type="password" minLength="8" autoComplete="new-password" /></label><label>Confirm password<input name="confirmPassword" required type="password" minLength="8" autoComplete="new-password" /></label><small className="muted-copy">Use this email and password to sign in to your client portal.</small></>}{hasMatchingClientSession && <p className="muted-copy">You’re signed in as {user.email}; this request will be added to your client portal.</p>}{error && <p className="notice-error">{error}</p>}<button className="button button-dark button-wide" disabled={busy}>{busy ? 'Creating your request…' : hasMatchingClientSession ? 'Send project request' : 'Send request & open portal'} <Send size={16} /></button></form>}</div></main><SiteFooter /></div>
 }
 
 function AuthPage({ signup = false }) {
