@@ -2,10 +2,10 @@
 
 1. Create your GLYPH studio account at `/create-account` and sign in.
    Signup creates your private workspace automatically.
-2. Open **Studio → Portfolio**. Use **Add a story** to upload files directly
-   from your computer or phone and enter the project's title, service, summary,
-   and segment. You can also use **Import folder** for batches of separate
-   projects.
+2. Open **Studio → Portfolio**. Use **Upload files** to upload one file or
+   multiple files directly from your computer or phone and enter the project's
+   title, service, summary, and segment. You can also use **Import folder** for
+   batches of separate projects.
 3. Choose a segment (Design, Branding, Graphic Design, UI/UX, Mobile App
    Development, Web Development, Video Editing, Videography, or Photography),
    then import images, PDFs, and supported videos (MP4, MOV, WebM, AVI, MPEG,

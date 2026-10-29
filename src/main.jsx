@@ -1711,8 +1711,8 @@ function PortfolioAdmin() {
   return <main className="studio-page">
     <StudioPageHeader kicker="PUBLIC PRESENCE / PORTFOLIO" title="Your work,<br />out in the world." action={<div className="portfolio-actions">
       {groupIds.length >= 2 && <button className="button button-soft" onClick={() => setGroupForm(true)}>Group {groupIds.length} drafts</button>}
+      <button className="button button-yellow" disabled={!workspace} onClick={() => { setStoryFiles([]); setCreating(true) }}><Plus size={16} /> Upload files</button>
       <button className="button button-soft" disabled={!workspace} onClick={() => setImporting(true)}><FolderKanban size={15} /> Import folder</button>
-      <button className="button button-yellow" disabled={!workspace} onClick={() => { setStoryFiles([]); setCreating(true) }}><Plus size={16} /> Add a story</button>
     </div>} />
     {error && <p className="notice-error">{error}</p>}
     {importSummary && <p className="notice-success">{importSummary}</p>}
@@ -1726,14 +1726,14 @@ function PortfolioAdmin() {
         <button className="button button-soft" onClick={() => { setStoryFiles([]); setEditingItem(item) }}>Edit</button>
         <button className="button button-soft" onClick={() => toggle(item)}>{item.published ? 'Unpublish' : 'Publish'}</button>
       </article>)}</div>
-    </> : <EmptyRecord title="Your work deserves a good story." text="Upload a project from this device or import your existing portfolio folder. Add its details, preview the files, and publish it when ready." onCreate={() => { setStoryFiles([]); setCreating(true) }} />}
-    {creating && <Modal title="Add portfolio story" onClose={() => { if (!saving) { setCreating(false); setStoryFiles([]) } }}><form onSubmit={save}>
+    </> : <EmptyRecord title="Your work deserves a good story." text="Upload an individual file or select multiple files from this device. Add project details, preview the work, and publish when ready. Folder import is optional." createLabel="Upload a file" onCreate={() => { setStoryFiles([]); setCreating(true) }} />}
+    {creating && <Modal title="Upload portfolio files" onClose={() => { if (!saving) { setCreating(false); setStoryFiles([]) } }}><form onSubmit={save}>
       <label>Project title<input name="title" required maxLength="180" /></label>
       <label>Public URL slug<input name="slug" placeholder="generated-from-title" maxLength="180" /></label>
       <label>Portfolio segment<select name="segment" defaultValue={portfolioSegments[0]}>{portfolioSegments.map((segment) => <option key={segment}>{segment}</option>)}</select></label>
       <label>Service<select name="service" defaultValue=""><option value="">Choose a service</option>{services.map((service) => <option key={service}>{service}</option>)}</select></label>
       <label>Project summary<textarea name="summary" rows="4" required maxLength="5000" /></label>
-      <label>Project files (images, video, or PDF)<input name="portfolio_files" type="file" accept="image/jpeg,image/png,application/pdf,video/mp4,video/quicktime,video/webm,video/x-msvideo,video/mpeg,video/3gpp,video/x-m4v" multiple onChange={(event) => setStoryFiles(Array.from(event.target.files || []))} /><small className="muted-copy">Up to 50 MB per file. The first image selected becomes the portfolio cover. All uploads stay private until you publish.</small></label>
+      <label>Choose file(s) (image, video, or PDF)<input name="portfolio_files" type="file" accept="image/jpeg,image/png,application/pdf,video/mp4,video/quicktime,video/webm,video/x-msvideo,video/mpeg,video/3gpp,video/x-m4v" multiple onChange={(event) => setStoryFiles(Array.from(event.target.files || []))} /><small className="muted-copy">You can choose one file or several. Up to 50 MB per file. The first image selected becomes the portfolio cover. Uploads stay private until you publish.</small></label>
       {storyFiles.length > 0 && <p className="muted-copy">{storyFiles.length} file(s) selected · {(storyFiles.reduce((sum, file) => sum + file.size, 0) / (1024 * 1024)).toFixed(1)} MB</p>}
       <button className="button button-dark" disabled={saving}>{saving ? 'Uploading & saving…' : 'Save as draft'} <ArrowRight size={15} /></button>
     </form></Modal>}
@@ -3502,8 +3502,8 @@ function StudioPageHeader({ kicker, title, action }) {
   return <div className="studio-page-head"><div><p className="kicker">{kicker}</p><h1>{first}<br /><em>{second}</em></h1></div>{action}</div>
 }
 
-function EmptyRecord({ title, text, onCreate }) {
-  return <div className="studio-empty"><span className="empty-icon">✳</span><h3>{title}</h3><p>{text}</p><button className="button button-dark" onClick={onCreate}><Plus size={15} /> Create new</button></div>
+function EmptyRecord({ title, text, onCreate, createLabel = 'Create new' }) {
+  return <div className="studio-empty"><span className="empty-icon">✳</span><h3>{title}</h3><p>{text}</p><button className="button button-dark" onClick={onCreate}><Plus size={15} /> {createLabel}</button></div>
 }
 
 function Modal({ title, onClose, children }) {
