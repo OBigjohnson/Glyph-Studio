@@ -1757,10 +1757,13 @@ function ContentCalendar() {
     try {
       ({ data, error: generationError } = await supabase.functions.invoke('generate-social-content', {
         body: { platforms: campaignPlatforms },
+        timeout: 60_000,
       }))
     } catch (requestError) {
       setGenerating(false)
-      setError(requestError.message || 'Could not reach the content generation service.')
+      setError(requestError.name === 'FunctionsFetchError'
+        ? 'The content generation request timed out or could not reach Supabase. Please try again.'
+        : requestError.message || 'Could not reach the content generation service.')
       return
     }
     setGenerating(false)

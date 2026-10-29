@@ -120,6 +120,7 @@ Deno.serve(async (request) => {
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+        signal: AbortSignal.timeout(45_000),
         body: JSON.stringify({
           systemInstruction: {
             parts: [{
@@ -228,6 +229,9 @@ Deno.serve(async (request) => {
     })
   } catch (error) {
     console.error('Could not generate social content:', error)
+    if (error instanceof DOMException && error.name === 'TimeoutError') {
+      return response({ error: 'Gemini took too long to respond. Try again, or enable fewer platforms.' }, 504)
+    }
     return response({ error: error instanceof Error ? error.message : 'Could not generate social content.' }, 500)
   }
 })
