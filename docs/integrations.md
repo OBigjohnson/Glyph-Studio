@@ -54,7 +54,7 @@ facts and educational advice for accuracy before posting.
 Configure the `GEMINI_API_KEY` Supabase Function secret and deploy the
 `generate-social-content` Edge Function as described in `setup.md`. The
 optional `GEMINI_MODEL` secret defaults to `gemini-3.5-flash-lite`; the
-educational-post image model defaults to `gemini-nano-banana-2.1` and can be
+educational-post image model defaults to `gemini-3.1-flash-image` and can be
 overridden with the optional `GEMINI_IMAGE_MODEL` secret. Text and image
 generation may incur Google API charges and remain subject to your Google AI
 plan, rate limits, and Supabase project limits. Never put the Gemini key in a

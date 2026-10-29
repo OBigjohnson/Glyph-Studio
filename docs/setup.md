@@ -75,7 +75,7 @@ to `.env.local`, a `VITE_*` variable, the website, or the Expo app.
    ```
 
    Educational posts also generate a social image with the Gemini image model
-   `gemini-nano-banana-2.1`. To override it, set the optional
+   `gemini-3.1-flash-image`. To override it, set the optional
    `GEMINI_IMAGE_MODEL` Supabase Function secret. Image generation may use
    additional API quota or incur charges.
 

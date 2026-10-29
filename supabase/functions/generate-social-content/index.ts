@@ -42,6 +42,33 @@ function fallbackVideoPrompt(
 }
 
 function getGeneratedImage(payload: Record<string, unknown>) {
+  const candidates = payload.candidates
+  if (Array.isArray(candidates)) {
+    const candidateParts = candidates
+      .flatMap((candidate) => {
+        if (!candidate || typeof candidate !== 'object') return []
+        const content = (candidate as { content?: unknown }).content
+        if (!content || typeof content !== 'object') return []
+        const parts = (content as { parts?: unknown }).parts
+        return Array.isArray(parts) ? parts : []
+      })
+    for (const part of candidateParts) {
+      if (!part || typeof part !== 'object') continue
+      const inlineData = (part as { inlineData?: unknown; inline_data?: unknown }).inlineData
+        || (part as { inline_data?: unknown }).inline_data
+      if (!inlineData || typeof inlineData !== 'object') continue
+      const image = inlineData as { data?: unknown; mimeType?: unknown; mime_type?: unknown }
+      if (typeof image.data === 'string') {
+        return {
+          base64: image.data,
+          mimeType: typeof image.mimeType === 'string'
+            ? image.mimeType
+            : typeof image.mime_type === 'string' ? image.mime_type : 'image/png',
+        }
+      }
+    }
+  }
+
   const outputImage = payload.output_image
   if (outputImage && typeof outputImage === 'object') {
     const image = outputImage as { data?: unknown; mime_type?: unknown; mimeType?: unknown }
@@ -421,7 +448,7 @@ Deno.serve(async (request) => {
     let generatedImagePath: string | null = null
     if (contentType === 'educational_solution') {
       const verticalFormat = requestedPlatforms.some((platform) => ['tiktok', 'youtube'].includes(platform))
-      const imageModel = Deno.env.get('GEMINI_IMAGE_MODEL') || 'gemini-nano-banana-2.1'
+      const imageModel = Deno.env.get('GEMINI_IMAGE_MODEL') || 'gemini-3.1-flash-image'
       const imagePrompt = [
         'Create one original, polished social-media editorial illustration for an educational creative-studio post.',
         `Topic and audience problem: ${angle}.`,
@@ -434,15 +461,24 @@ Deno.serve(async (request) => {
       ].join(' ')
       let imageResponse: Response
       try {
-        imageResponse = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
+        imageResponse = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(imageModel)}:generateContent`,
+          {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
           signal: AbortSignal.timeout(45_000),
           body: JSON.stringify({
-            model: imageModel,
-            input: [{ type: 'text', text: imagePrompt }],
+            contents: [{ parts: [{ text: imagePrompt }] }],
+            generationConfig: {
+              responseModalities: ['IMAGE'],
+              imageConfig: {
+                aspectRatio: verticalFormat ? '9:16' : '4:5',
+                imageSize: '1K',
+              },
+            },
           }),
-        })
+          },
+        )
       } catch (imageError) {
         if (imageError instanceof DOMException && imageError.name === 'TimeoutError') {
           return response({ error: 'Gemini wrote the captions, but image generation took too long. Please try again.' }, 504)
@@ -450,10 +486,19 @@ Deno.serve(async (request) => {
         throw imageError
       }
       if (!imageResponse.ok) {
-        const providerError = await imageResponse.text()
-        console.error('Gemini social image generation failed:', imageResponse.status, providerError.slice(0, 700))
+        const providerErrorText = await imageResponse.text()
+        console.error('Gemini social image generation failed:', imageResponse.status, providerErrorText.slice(0, 700))
+        let providerMessage = ''
+        try {
+          const providerError = JSON.parse(providerErrorText)
+          providerMessage = typeof providerError.error?.message === 'string'
+            ? providerError.error.message
+            : ''
+        } catch {
+          providerMessage = ''
+        }
         return response({
-          error: 'Gemini wrote the captions but could not generate the image. Check that image generation is available for your Gemini API key, then try again.',
+          error: `Gemini wrote the captions but image generation failed (${imageResponse.status})${providerMessage ? `: ${providerMessage.slice(0, 240)}` : '. Check image model access for your Gemini API key.'}`,
         }, 502)
       }
       const imagePayload = await imageResponse.json()
