@@ -50,6 +50,39 @@ npm install
 npm run dev
 ```
 
+## Gemini social content
+
+The social calendar uses Gemini only from an authenticated Supabase Edge
+Function. The API key is a server-side Function secret and must never be added
+to `.env.local`, a `VITE_*` variable, the website, or the Expo app.
+
+1. Apply the database migration and deploy the function to the linked Supabase
+   project:
+
+   ```bash
+   supabase db push
+   supabase functions deploy generate-social-content
+   ```
+
+2. Create a Gemini API key in
+   [Google AI Studio](https://aistudio.google.com/app/apikey) and add it as a
+   Supabase Function secret. `GEMINI_MODEL` is optional; the default is
+   `gemini-3.8-flash`.
+
+   ```bash
+   supabase secrets set GEMINI_API_KEY=your_gemini_api_key GEMINI_MODEL=gemini-3.8-flash
+   ```
+
+3. In Studio settings, choose the platforms to include. Open the social
+   calendar, generate drafts, review/edit each one, and save. GLYPH tracks
+   copies, manual "used" actions, and manually recorded publication; posting
+   remains a manual action.
+
+Gemini use may incur charges under your Google AI plan. Generated material
+should be fact-checked before publishing. See
+[`integrations.md`](./integrations.md#gemini-social-content) for data flow and
+the feature's limits.
+
 ## Deploying the combined app with Vercel
 
 The public portfolio, client portal, and studio workspace deploy together as

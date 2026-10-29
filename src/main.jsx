@@ -831,7 +831,7 @@ function useStudioWorkspace() {
   const reportError = useCallback((message) => setError(message), [])
   useEffect(() => {
     if (!supabase || !user?.id) return
-    supabase.from('members').select('workspace_id, workspaces(id, studio_name, slug, contact_email, brand_color, tagline, location, hero_title, hero_subtitle, about_text, services, payment_bank_name, payment_account_name, payment_account_number, payment_reference_note, payment_note)').eq('user_id', user.id).eq('role', 'owner').maybeSingle()
+    supabase.from('members').select('workspace_id, workspaces(id, studio_name, slug, contact_email, brand_color, tagline, location, hero_title, hero_subtitle, about_text, services, enabled_social_platforms, payment_bank_name, payment_account_name, payment_account_number, payment_reference_note, payment_note)').eq('user_id', user.id).eq('role', 'owner').maybeSingle()
       .then(({ data, error: queryError }) => { if (queryError) reportError(queryError.message); else setWorkspace(data?.workspaces || null) })
   }, [user?.id, reportError])
   return { user, workspace, setWorkspace, error, setError: reportError }
@@ -1637,9 +1637,12 @@ function PortfolioAdmin() {
 }
 
 const socialPlatforms = [
-  { id: 'instagram', label: 'Instagram', url: 'https://www.instagram.com/' },
-  { id: 'facebook', label: 'Facebook Page', url: 'https://www.facebook.com/' },
-  { id: 'x', label: 'X', url: 'https://x.com/compose/post' },
+  { id: 'instagram', label: 'Instagram', url: 'https://www.instagram.com/', limit: 2200 },
+  { id: 'tiktok', label: 'TikTok', url: 'https://www.tiktok.com/upload/', limit: 2200 },
+  { id: 'facebook', label: 'Facebook', url: 'https://www.facebook.com/', limit: 5000 },
+  { id: 'x', label: 'X', url: 'https://x.com/compose/post', limit: 280 },
+  { id: 'linkedin', label: 'LinkedIn', url: 'https://www.linkedin.com/feed/', limit: 3000 },
+  { id: 'youtube', label: 'YouTube', url: 'https://studio.youtube.com/', limit: 5000 },
 ]
 
 const postStatuses = [
@@ -1663,69 +1666,6 @@ function platformName(platform) {
   return socialPlatforms.find((entry) => entry.id === platform)?.label || platform
 }
 
-function makeCampaignCaptions(work, story, angle, tone, variant = 0) {
-  const title = work.title.trim()
-  const service = work.service.trim()
-  const subject = service ? `${service.toLowerCase()} work` : 'creative work'
-  const instagramHooks = {
-    project: [`What makes ${title} worth a second look?`, `Every project has a story. This one is ${title}.`, `Before you scroll past ${title}, look a little closer.`],
-    process: [`Good work is rarely one big idea. It is a series of considered choices.`, `What happens between the first idea and the finished work?`, `The details are where the story changes.`],
-    service: [`Can ${subject} do more than look good?`, `A good ${subject} should make you feel something.`, `Here is what thoughtful ${subject} can look like.`],
-  }
-  const facebookHooks = {
-    project: [`There is more to ${title} than the finished image.`, `A project is a chain of small decisions. Here is ${title}.`, `What does a thoughtful ${service || 'creative'} project look like?`],
-    process: [`The best part of a finished project is knowing the thought behind it.`, `Here is the thinking and making behind this studio work.`, `Let us take you from the first idea to the final details.`],
-    service: [`Looking for ${subject} with a clear point of view?`, `A strong ${subject} starts by knowing what it needs to say.`, `Here is a closer look at the value of considered ${subject}.`],
-  }
-  const xHooks = {
-    project: [`The story behind ${title}:`, `A project is more than its final frame. ${title}:`, `Take a second look at ${title}.`],
-    process: [`Good work is a trail of decisions.`, `From first thought to final detail:`, `The process is part of the story.`],
-    service: [`What should ${subject} make possible?`, `A thoughtful ${subject} tells a story.`, `A closer look at considered ${subject}:`],
-  }
-  const instagramCtas = {
-    concise: 'Take a closer look at the work. Explore more in our profile.',
-    warm: 'Stay with the details, then visit our profile to see more of the work.',
-    bold: 'See the work. Then bring us the idea you cannot stop thinking about.',
-  }
-  const facebookCtas = {
-    concise: 'Take a closer look at the finished work and explore more in our portfolio.',
-    warm: 'What stood out to you? See more work in our portfolio, or tell us what you are planning.',
-    bold: 'Have an idea that deserves this much thought? Start a project with GLYPH.',
-  }
-  const xCtas = {
-    concise: 'Take a closer look. More work in our profile.',
-    warm: 'See the work, then tell us what you are making.',
-    bold: 'Have a story to tell? Let’s make it visible.',
-  }
-  const tags = [
-    '#GLYPHStudio',
-    service ? `#${service.split(/[^a-zA-Z0-9]+/).filter(Boolean).map((word) => word[0].toUpperCase() + word.slice(1)).join('')}` : '',
-    angle === 'process' ? '#BehindTheWork' : angle === 'service' ? '#CreativeStudio' : '#SelectedWork',
-  ].filter(Boolean)
-  const cleanTone = tone in instagramCtas ? tone : 'warm'
-  const cleanAngle = angle in instagramHooks ? angle : 'project'
-  const pick = (list) => list[((variant % list.length) + list.length) % list.length]
-  const instagramCaption = `${pick(instagramHooks[cleanAngle])}\n\n${story.trim()}\n\n${instagramCtas[cleanTone]}\n\n${tags.join(' ')}`
-  const facebookCaption = `${pick(facebookHooks[cleanAngle])}\n\n${story.trim()}\n\n${facebookCtas[cleanTone]}\n\n${tags[0]}`
-  const xHook = pick(xHooks[cleanAngle])
-  const xCta = xCtas[cleanTone]
-  const xTag = tags[0]
-  const storyPrefix = ' The story: '
-  const storyLimit = Math.max(0, 280 - xHook.length - storyPrefix.length - xCta.length - xTag.length - 4)
-  let xStory = story.trim()
-  if (xStory.length > storyLimit) {
-    const clipped = xStory.slice(0, Math.max(0, storyLimit - 1))
-    const lastSpace = clipped.lastIndexOf(' ')
-    xStory = `${clipped.slice(0, lastSpace > 0 ? lastSpace : clipped.length).trimEnd()}…`
-  }
-  const xCaption = `${xHook}${storyPrefix}${xStory} ${xCta} ${xTag}`.slice(0, 280)
-  return [
-    { platform: 'instagram', caption: instagramCaption },
-    { platform: 'facebook', caption: facebookCaption },
-    { platform: 'x', caption: xCaption },
-  ]
-}
-
 function ContentCalendar() {
   const { user, workspace } = useStudioWorkspace()
   const now = new Date()
@@ -1743,7 +1683,8 @@ function ContentCalendar() {
   const [copiedAltId, setCopiedAltId] = useState('')
   const [campaignSetup, setCampaignSetup] = useState(null)
   const [campaignDrafts, setCampaignDrafts] = useState(null)
-  const [campaignVariants, setCampaignVariants] = useState({})
+  const [campaignPlatforms, setCampaignPlatforms] = useState([])
+  const [generating, setGenerating] = useState(false)
 
   const refresh = useCallback(async () => {
     if (!supabase || !workspace?.id) return
@@ -1751,16 +1692,16 @@ function ContentCalendar() {
     setError('')
     const [postResult, assetResult, workResult] = await Promise.all([
       supabase.from('social_content_posts')
-        .select('id, platform, caption, alt_text, planned_at, status, portfolio_asset_id, created_at, updated_at')
+        .select('id, platform, caption, alt_text, planned_at, status, portfolio_asset_id, portfolio_item_id, copied_at, copy_count, used_at, published_at, created_at, updated_at')
         .eq('workspace_id', workspace.id)
         .order('planned_at', { ascending: true, nullsFirst: false }),
       supabase.from('portfolio_assets')
-        .select('id, portfolio_item_id, file_name, mime_type, storage_path, portfolio_items!inner(id, title, service, summary)')
+        .select('id, portfolio_item_id, file_name, mime_type, storage_path, portfolio_items!inner(id, title, service, summary, segment)')
         .eq('workspace_id', workspace.id)
         .in('mime_type', ['image/jpeg', 'image/png'])
         .order('created_at', { ascending: false }),
         supabase.from('portfolio_items')
-        .select('id, title, service, summary')
+        .select('id, title, service, summary, segment')
         .eq('workspace_id', workspace.id)
         .order('created_at', { ascending: false }),
     ])
@@ -1784,6 +1725,10 @@ function ContentCalendar() {
     if (workspace?.id) refresh()
   }, [refresh, workspace?.id])
 
+  useEffect(() => {
+    setCampaignPlatforms(workspace?.enabled_social_platforms || socialPlatforms.map(({ id }) => id))
+  }, [workspace?.id, workspace?.enabled_social_platforms])
+
   function openEditor(post = null, date = selectedDate) {
     setError('')
     setEditor(post
@@ -1794,40 +1739,54 @@ function ContentCalendar() {
   function openCampaign(date = selectedDate) {
     setError('')
     setCampaignSetup({
-      portfolio_item_id: '',
-      portfolio_asset_id: '',
-      story: '',
       planned_local: `${date}T09:00`,
-      angle: 'project',
-      tone: 'warm',
     })
   }
 
-  function generateCampaign(event) {
+  async function generateCampaign(event) {
     event.preventDefault()
-    const selectedWork = portfolioWorks.find((work) => work.id === campaignSetup?.portfolio_item_id)
-    const selectedAsset = assets.find((asset) => asset.id === campaignSetup?.portfolio_asset_id && asset.portfolio_item_id === selectedWork?.id)
-    if (!selectedWork || !selectedAsset) {
-      setError('Choose a portfolio work and one of its images to create the campaign.')
+    if (!campaignPlatforms.length) {
+      setError('Enable at least one social platform in studio settings before generating content.')
       return
     }
+    if (!supabase) return
+    setGenerating(true)
+    setError('')
+    let data
+    let generationError
+    try {
+      ({ data, error: generationError } = await supabase.functions.invoke('generate-social-content', {
+        body: { platforms: campaignPlatforms },
+      }))
+    } catch (requestError) {
+      setGenerating(false)
+      setError(requestError.message || 'Could not reach the content generation service.')
+      return
+    }
+    setGenerating(false)
+    if (generationError || data?.error) {
+      setError(data?.error || generationError?.message || 'Could not generate social content.')
+      return
+    }
+    const selectedWork = data?.project
+    if (!portfolioWorks.some((work) => work.id === selectedWork?.id)
+      || !Array.isArray(data.drafts)
+      || data.drafts.length !== campaignPlatforms.length) {
+      setError('The generated content did not match a project in your portfolio. Please try again.')
+      return
+    }
+    const selectedAsset = assets.find((asset) => asset.portfolio_item_id === selectedWork.id)
     const plannedAt = campaignSetup.planned_local
       ? new Date(campaignSetup.planned_local).toISOString()
       : null
     setCampaignDrafts({
       work: selectedWork,
-      asset: selectedAsset,
-      altText: [
-        `Portfolio image for ${selectedWork.title}${selectedWork.service ? `, a ${selectedWork.service.toLowerCase()} project` : ''}.`,
-        selectedWork.summary.trim(),
-      ].filter(Boolean).join(' '),
+      asset: selectedAsset || null,
       plannedAt,
-      angle: campaignSetup.angle,
-      tone: campaignSetup.tone,
-      story: campaignSetup.story.trim(),
-      drafts: makeCampaignCaptions(selectedWork, campaignSetup.story, campaignSetup.angle, campaignSetup.tone),
+      angle: data.angle,
+      rationale: data.rationale,
+      drafts: data.drafts,
     })
-    setCampaignVariants({})
     setCampaignSetup(null)
   }
 
@@ -1835,17 +1794,6 @@ function ContentCalendar() {
     setCampaignDrafts((current) => ({
       ...current,
       drafts: current.drafts.map((draft) => draft.platform === platform ? { ...draft, caption } : draft),
-    }))
-  }
-
-  function regenerateCampaignCaption(platform) {
-    const variant = (campaignVariants[platform] || 0) + 1
-    setCampaignVariants((current) => ({ ...current, [platform]: variant }))
-    setCampaignDrafts((current) => ({
-      ...current,
-      drafts: current.drafts.map((draft) => draft.platform === platform
-        ? makeCampaignCaptions(current.work, current.story, current.angle, current.tone, variant).find((candidate) => candidate.platform === platform)
-        : draft),
     }))
   }
 
@@ -1862,10 +1810,11 @@ function ContentCalendar() {
       created_by: user.id,
       platform: draft.platform,
       caption: draft.caption.trim(),
-      alt_text: campaignDrafts.altText.trim(),
+      alt_text: draft.alt_text.trim(),
       planned_at: campaignDrafts.plannedAt,
       status: campaignDrafts.plannedAt ? 'planned' : 'draft',
-      portfolio_asset_id: campaignDrafts.asset.id,
+      portfolio_item_id: campaignDrafts.work.id,
+      portfolio_asset_id: campaignDrafts.asset?.id || null,
     })))
     setSaving(false)
     if (result.error) {
@@ -1899,27 +1848,65 @@ function ContentCalendar() {
       planned_at: dateValue ? new Date(dateValue).toISOString() : null,
       status: requestedStatus,
       portfolio_asset_id: String(form.get('portfolio_asset_id') || '') || null,
+      portfolio_item_id: assets.find((asset) => asset.id === String(form.get('portfolio_asset_id') || ''))?.portfolio_item_id || editor.portfolio_item_id || null,
       updated_at: new Date().toISOString(),
     }
     const result = editor.id
-      ? await supabase.from('social_content_posts').update(payload).eq('id', editor.id).eq('workspace_id', workspace.id)
-      : await supabase.from('social_content_posts').insert(payload)
+      ? await supabase.from('social_content_posts').update(payload).eq('id', editor.id).eq('workspace_id', workspace.id).select('id').single()
+      : await supabase.from('social_content_posts').insert(payload).select('id').single()
     setSaving(false)
     if (result.error) {
       setError(result.error.message)
       return
     }
+    if (requestedStatus === 'published') {
+      const { error: trackingError } = await supabase.rpc('track_social_content_post', {
+        target_post: editor.id || result.data?.id,
+        event_name: 'published',
+      })
+      if (trackingError) {
+        setError(`Post saved, but publication could not be recorded: ${trackingError.message}`)
+        setEditor(null)
+        await refresh()
+        return
+      }
+    }
     setEditor(null)
     await refresh()
   }
 
+  async function trackPostEvent(post, eventName, failureLabel) {
+    try {
+      const { data, error: trackError } = await supabase.rpc('track_social_content_post', {
+        target_post: post.id,
+        event_name: eventName,
+      })
+      if (trackError) throw trackError
+      const trackedPost = data?.[0]
+      if (!trackedPost) throw new Error('The tracking response was empty.')
+      setPosts((current) => current.map((entry) => entry.id === post.id ? { ...entry, ...trackedPost } : entry))
+      return true
+    } catch (trackError) {
+      setError(`${failureLabel}: ${trackError.message || 'Could not record this activity.'}`)
+      return false
+    }
+  }
+
   async function changeStatus(post, status) {
+    if (status === 'published') {
+      await trackPostEvent(post, 'published', 'Could not record publication')
+      return
+    }
     const { error: updateError } = await supabase.from('social_content_posts')
       .update({ status, updated_at: new Date().toISOString() })
       .eq('id', post.id)
       .eq('workspace_id', workspace.id)
     if (updateError) setError(updateError.message)
     else setPosts((current) => current.map((entry) => entry.id === post.id ? { ...entry, status } : entry))
+  }
+
+  async function markPostUsed(post) {
+    await trackPostEvent(post, 'used', 'Could not record used status')
   }
 
   async function removePost(post) {
@@ -1932,11 +1919,13 @@ function ContentCalendar() {
   async function copyCaption(post) {
     try {
       await navigator.clipboard.writeText(post.caption)
-      setCopiedId(post.id)
-      window.setTimeout(() => setCopiedId(''), 1800)
     } catch {
       setError('Clipboard access is unavailable. Select and copy the caption from Edit instead.')
+      return
     }
+    if (!await trackPostEvent(post, 'copied', 'Caption copied, but usage could not be recorded')) return
+    setCopiedId(post.id)
+    window.setTimeout(() => setCopiedId(''), 1800)
   }
 
   async function copyImageDescription(post) {
@@ -1986,8 +1975,8 @@ function ContentCalendar() {
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone
 
   return <main className="studio-page calendar-page">
-    <StudioPageHeader kicker="SOCIAL / PLAN & HAND OFF" title="Make a date<br />with your audience." action={<div className="calendar-header-actions"><button className="button button-soft" disabled={!workspace || !portfolioWorks.length} onClick={() => openCampaign(selectedDate)}><Sparkles size={15} /> Create from portfolio</button><button className="button button-dark" disabled={!workspace} onClick={() => openEditor(null, selectedDate)}><Plus size={16} /> Plan a post</button></div>} />
-    <div className="calendar-note"><CalendarDays size={18} /><p>Plan here, then copy the caption and download the image to schedule it in the platform app. GLYPH does not publish or verify posts.</p></div>
+    <StudioPageHeader kicker="SOCIAL / PLAN & HAND OFF" title="Make a date<br />with your audience." action={<div className="calendar-header-actions"><button className="button button-soft" disabled={!workspace || !portfolioWorks.length || !campaignPlatforms.length} onClick={() => openCampaign(selectedDate)}><Sparkles size={15} /> Generate AI content</button><button className="button button-dark" disabled={!workspace} onClick={() => openEditor(null, selectedDate)}><Plus size={16} /> Plan a post</button></div>} />
+    <div className="calendar-note"><CalendarDays size={18} /><p>Gemini chooses a project from your portfolio and prepares platform-specific drafts. Review, edit, copy, then publish manually; GLYPH records your usage and does not publish automatically.</p></div>
     {error && <p className="notice-error">{error}</p>}
     <div className="calendar-toolbar">
       <div className="calendar-month-controls"><button className="icon-button" aria-label="Previous month" onClick={() => { const nextMonth = new Date(month.getFullYear(), month.getMonth() - 1, 1); setMonth(nextMonth); setSelectedDate(localDateKey(nextMonth)) }}><ChevronLeft /></button><h2>{monthLabel}</h2><button className="icon-button" aria-label="Next month" onClick={() => { const nextMonth = new Date(month.getFullYear(), month.getMonth() + 1, 1); setMonth(nextMonth); setSelectedDate(localDateKey(nextMonth)) }}><ChevronRight /></button><button className="button button-soft" onClick={() => { const today = new Date(); setMonth(new Date(today.getFullYear(), today.getMonth(), 1)); setSelectedDate(localDateKey(today)) }}>Today</button></div>
@@ -2011,10 +2000,10 @@ function ContentCalendar() {
         </section>
         <aside className="calendar-agenda">
           <header><div><p className="kicker">DAY PLAN</p><h2>{new Date(`${selectedDate}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</h2></div><button className="icon-button" aria-label="Plan a post for this day" onClick={() => openEditor(null, selectedDate)}><Plus /></button></header>
-          {selectedPosts.length ? <div className="calendar-post-list">{selectedPosts.map((post) => <CalendarPost key={post.id} post={post} assets={assets} copied={copiedId === post.id} copiedAlt={copiedAltId === post.id} onEdit={() => openEditor(post)} onDelete={() => removePost(post)} onCopy={() => copyCaption(post)} onCopyAlt={() => copyImageDescription(post)} onDownload={() => downloadAsset(post)} onStatus={(status) => changeStatus(post, status)} />)}</div> : <p className="empty-copy">Nothing planned for this day.</p>}
+          {selectedPosts.length ? <div className="calendar-post-list">{selectedPosts.map((post) => <CalendarPost key={post.id} post={post} assets={assets} copied={copiedId === post.id} copiedAlt={copiedAltId === post.id} onEdit={() => openEditor(post)} onDelete={() => removePost(post)} onCopy={() => copyCaption(post)} onCopyAlt={() => copyImageDescription(post)} onDownload={() => downloadAsset(post)} onStatus={(status) => changeStatus(post, status)} onUsed={() => markPostUsed(post)} />)}</div> : <p className="empty-copy">Nothing planned for this day.</p>}
         </aside>
       </div>
-      <section className="calendar-drafts"><div className="studio-section-heading"><div><p className="kicker">NO DATE SET</p><h2>Drafts</h2></div><span>{draftPosts.length}</span></div>{draftPosts.length ? <div className="calendar-post-list">{draftPosts.map((post) => <CalendarPost key={post.id} post={post} assets={assets} copied={copiedId === post.id} copiedAlt={copiedAltId === post.id} onEdit={() => openEditor(post)} onDelete={() => removePost(post)} onCopy={() => copyCaption(post)} onCopyAlt={() => copyImageDescription(post)} onDownload={() => downloadAsset(post)} onStatus={(status) => changeStatus(post, status)} />)}</div> : <p className="empty-copy">Unscheduled drafts will collect here.</p>}
+      <section className="calendar-drafts"><div className="studio-section-heading"><div><p className="kicker">NO DATE SET</p><h2>Drafts</h2></div><span>{draftPosts.length}</span></div>{draftPosts.length ? <div className="calendar-post-list">{draftPosts.map((post) => <CalendarPost key={post.id} post={post} assets={assets} copied={copiedId === post.id} copiedAlt={copiedAltId === post.id} onEdit={() => openEditor(post)} onDelete={() => removePost(post)} onCopy={() => copyCaption(post)} onCopyAlt={() => copyImageDescription(post)} onDownload={() => downloadAsset(post)} onStatus={(status) => changeStatus(post, status)} onUsed={() => markPostUsed(post)} />)}</div> : <p className="empty-copy">Unscheduled drafts will collect here.</p>}
     </section>
     </>}
   {editor && <Modal title={editor.id ? 'Edit planned post' : 'Plan a social post'} onClose={() => { if (!saving) setEditor(null) }}><form onSubmit={savePost}>
@@ -2028,37 +2017,33 @@ function ContentCalendar() {
       <p className="muted-copy">Status is your note only. GLYPH cannot see whether a post was scheduled or published on the platform.</p>
       <button className="button button-dark" disabled={saving}>{saving ? 'Saving…' : editor.id ? 'Save changes' : 'Save post'} <Check size={15} /></button>
     </form></Modal>}
-    {campaignSetup && <Modal title="Create from portfolio" onClose={() => setCampaignSetup(null)}><form onSubmit={generateCampaign}>
-      <p className="muted-copy">Choose one project and one of its images. GLYPH will prepare editable Instagram, Facebook, and X drafts using only your portfolio details.</p>
-      <label>Portfolio work<select required value={campaignSetup.portfolio_item_id} onChange={(event) => { const selectedWork = portfolioWorks.find((work) => work.id === event.target.value); setCampaignSetup((current) => ({ ...current, portfolio_item_id: event.target.value, portfolio_asset_id: '', story: selectedWork?.summary || '' })) }}><option value="">Choose a project</option>{portfolioWorks.map((work) => <option key={work.id} value={work.id}>{work.title}{work.service ? ` · ${work.service}` : ''}</option>)}</select></label>
-      <label>Story behind this work<textarea required minLength={20} maxLength={3000} rows="6" value={campaignSetup.story} onChange={(event) => setCampaignSetup((current) => ({ ...current, story: event.target.value }))} placeholder="Tell the story: what was the starting point, what choices shaped the work, and what should people notice?" /><small className="calendar-field-note">Start with the brief, share a meaningful choice, and end with what the finished work communicates. Generated captions use only this story.</small></label>
-      <label>Image from this work<select required disabled={!campaignSetup.portfolio_item_id} value={campaignSetup.portfolio_asset_id} onChange={(event) => setCampaignSetup((current) => ({ ...current, portfolio_asset_id: event.target.value }))}><option value="">Choose an image</option>{assets.filter((asset) => asset.portfolio_item_id === campaignSetup.portfolio_item_id).map((asset) => <option key={asset.id} value={asset.id}>{asset.file_name}</option>)}</select></label>
-      {campaignSetup.portfolio_asset_id && assets.find((asset) => asset.id === campaignSetup.portfolio_asset_id)?.url && <img className="calendar-image-preview" src={assets.find((asset) => asset.id === campaignSetup.portfolio_asset_id).url} alt="Selected portfolio work" />}
-      <label>Calendar date and time<input type="datetime-local" required value={campaignSetup.planned_local} onChange={(event) => setCampaignSetup((current) => ({ ...current, planned_local: event.target.value }))} /><small className="calendar-field-note">Local time: {timezone}</small></label>
-      <label>Content angle<select value={campaignSetup.angle} onChange={(event) => setCampaignSetup((current) => ({ ...current, angle: event.target.value }))}><option value="project">Project reveal</option><option value="process">Process and details</option><option value="service">Service showcase</option></select></label>
-      <label>Writing tone<select value={campaignSetup.tone} onChange={(event) => setCampaignSetup((current) => ({ ...current, tone: event.target.value }))}><option value="warm">Warm and inviting</option><option value="concise">Concise and direct</option><option value="bold">Bold and confident</option></select></label>
-      {!assets.some((asset) => asset.portfolio_item_id === campaignSetup.portfolio_item_id) && campaignSetup.portfolio_item_id && <p className="muted-copy">This work has no JPG or PNG assets yet. Add an image to the portfolio work first.</p>}
-      <button className="button button-dark" disabled={!campaignSetup.portfolio_item_id || !campaignSetup.portfolio_asset_id || campaignSetup.story.trim().length < 20}>Generate story-led drafts <Sparkles size={15} /></button>
+    {campaignSetup && <Modal title="Generate from your portfolio" onClose={() => { if (!generating) setCampaignSetup(null) }}><form onSubmit={generateCampaign}>
+      <p className="muted-copy">Gemini will review project descriptions and previous content usage, select a project and content angle, then write a distinct draft for each enabled platform.</p>
+      <div className="campaign-platform-list"><b>Enabled platforms</b><div>{campaignPlatforms.map((id) => <span key={id}>{platformName(id)}</span>)}</div><small>Manage platforms in Studio settings.</small></div>
+      <label>Calendar date and time<input type="datetime-local" value={campaignSetup.planned_local} onChange={(event) => setCampaignSetup((current) => ({ ...current, planned_local: event.target.value }))} /><small className="calendar-field-note">Local time: {timezone}. Leave blank to save as an unscheduled draft.</small></label>
+      <button className="button button-dark" disabled={generating || !campaignPlatforms.length}>{generating ? 'Studying your portfolio…' : 'Choose project & generate drafts'} <Sparkles size={15} /></button>
     </form></Modal>}
     {campaignDrafts && <Modal title="Review campaign drafts" onClose={() => { if (!saving) setCampaignDrafts(null) }}><div className="campaign-review">
-      <div className="campaign-review-work">{campaignDrafts.asset.url && <img src={campaignDrafts.asset.url} alt="" />}<div><b>{campaignDrafts.work.title}</b><span>{campaignDrafts.work.service || 'Portfolio work'} · {campaignDrafts.plannedAt ? new Date(campaignDrafts.plannedAt).toLocaleString() : 'No date'}</span></div></div>
-      <p className="muted-copy">Built-in writing recipes shape your story into a hook, narrative, and invitation for each platform. This is not AI. Review every caption before saving; GLYPH does not post or schedule externally.</p>
-      {campaignDrafts.drafts.map((draft) => <section className="campaign-draft" key={draft.platform}><header><b>{platformName(draft.platform)}</b><button className="button button-soft" type="button" onClick={() => regenerateCampaignCaption(draft.platform)}><Sparkles size={14} /> New version</button></header><label className="visually-hidden" htmlFor={`campaign-caption-${draft.platform}`}>{platformName(draft.platform)} caption</label><textarea id={`campaign-caption-${draft.platform}`} rows={draft.platform === 'x' ? 4 : 6} maxLength={draft.platform === 'x' ? 280 : 5000} value={draft.caption} onChange={(event) => editCampaignCaption(draft.platform, event.target.value)} /><small className={draft.platform === 'x' && draft.caption.length >= 270 ? 'campaign-character-count campaign-character-warning' : 'campaign-character-count'}>{draft.caption.length}{draft.platform === 'x' ? ' / 280 characters' : ' characters'}</small></section>)}
-      <div className="campaign-review-actions"><button className="button button-soft" type="button" onClick={() => { const campaign = campaignDrafts; setCampaignDrafts(null); setCampaignSetup({ portfolio_item_id: campaign.work.id, portfolio_asset_id: campaign.asset.id, story: campaign.story, planned_local: campaign.plannedAt ? localDateTimeValue(campaign.plannedAt) : `${selectedDate}T09:00`, angle: campaign.angle, tone: campaign.tone }) }}>Start over</button><button className="button button-dark" type="button" disabled={saving || campaignDrafts.drafts.some((draft) => !draft.caption.trim())} onClick={saveCampaign}>{saving ? 'Saving…' : 'Save 3 drafts to calendar'} <Check size={15} /></button></div>
+      <div className="campaign-review-work">{campaignDrafts.asset?.url && <img src={campaignDrafts.asset.url} alt="" />}<div><b>{campaignDrafts.work.title}</b><span>{campaignDrafts.work.segment || campaignDrafts.work.service || 'Portfolio work'} · {campaignDrafts.plannedAt ? new Date(campaignDrafts.plannedAt).toLocaleString() : 'No date'}</span></div></div>
+      <section className="campaign-angle"><b>Content angle</b><p>{campaignDrafts.angle}</p><small>{campaignDrafts.rationale}</small></section>
+      <p className="muted-copy">Review and edit every draft before saving. GLYPH does not post or schedule externally.</p>
+      {campaignDrafts.drafts.map((draft) => <section className="campaign-draft" key={draft.platform}><header><b>{platformName(draft.platform)}</b></header><label htmlFor={`campaign-caption-${draft.platform}`}>{platformName(draft.platform)} caption</label><textarea id={`campaign-caption-${draft.platform}`} rows={draft.platform === 'x' ? 4 : 6} maxLength={socialPlatforms.find((platform) => platform.id === draft.platform)?.limit || 5000} value={draft.caption} onChange={(event) => editCampaignCaption(draft.platform, event.target.value)} /><small className="campaign-character-count">{draft.caption.length} / {socialPlatforms.find((platform) => platform.id === draft.platform)?.limit || 5000} characters</small><label htmlFor={`campaign-alt-${draft.platform}`}>Optional image description (Gemini does not see images)</label><textarea id={`campaign-alt-${draft.platform}`} rows="2" maxLength="1000" value={draft.alt_text} onChange={(event) => setCampaignDrafts((current) => ({ ...current, drafts: current.drafts.map((entry) => entry.platform === draft.platform ? { ...entry, alt_text: event.target.value } : entry) }))} /></section>)}
+      <div className="campaign-review-actions"><button className="button button-soft" type="button" onClick={() => { setCampaignDrafts(null); openCampaign(selectedDate) }}>Generate again</button><button className="button button-dark" type="button" disabled={saving || campaignDrafts.drafts.some((draft) => !draft.caption.trim() || draft.caption.length > (socialPlatforms.find((platform) => platform.id === draft.platform)?.limit || 5000))} onClick={saveCampaign}>{saving ? 'Saving…' : `Save ${campaignDrafts.drafts.length} drafts`} <Check size={15} /></button></div>
     </div></Modal>}
   </main>
 }
 
-function CalendarPost({ post, assets, copied, copiedAlt, onEdit, onDelete, onCopy, onCopyAlt, onDownload, onStatus }) {
+function CalendarPost({ post, assets, copied, copiedAlt, onEdit, onDelete, onCopy, onCopyAlt, onDownload, onStatus, onUsed }) {
   const asset = assets.find((entry) => entry.id === post.portfolio_asset_id)
   const platform = socialPlatforms.find((entry) => entry.id === post.platform)
   const time = post.planned_at ? new Date(post.planned_at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : ''
   return <article className="calendar-post">
     {asset?.url ? <img src={asset.url} alt="" /> : <span className="calendar-post-no-image"><ImagePlus /></span>}
-    <div className="calendar-post-body"><header><b>{platformName(post.platform)}</b>{time && <time>{time}</time>}</header><p>{post.caption}</p><label className="calendar-status">Status<select aria-label={`${platformName(post.platform)} post status`} value={post.status} onChange={(event) => onStatus(event.target.value)}>{postStatuses.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label><div className="calendar-post-actions">
+    <div className="calendar-post-body"><header><b>{platformName(post.platform)}</b>{time && <time>{time}</time>}</header><p>{post.caption}</p><div className="calendar-history">{post.copy_count > 0 && <span>Copied {post.copy_count}×</span>}{post.used_at && <span>Used</span>}{post.published_at && <span>Published</span>}</div><label className="calendar-status">Status<select aria-label={`${platformName(post.platform)} post status`} value={post.status} onChange={(event) => onStatus(event.target.value)}>{postStatuses.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label><div className="calendar-post-actions">
       <button className="button button-soft" onClick={onCopy}><Copy size={14} /> {copied ? 'Copied' : 'Copy caption'}</button>
       {post.alt_text && <button className="button button-soft" onClick={onCopyAlt}><Copy size={14} /> {copiedAlt ? 'Alt copied' : 'Copy alt text'}</button>}
       {asset && <button className="button button-soft" onClick={onDownload}><Download size={14} /> Image</button>}
+      {!post.used_at && <button className="button button-soft" onClick={onUsed}>Mark used</button>}
       <a className="button button-soft" href={platform?.url} target="_blank" rel="noreferrer"><ExternalLink size={14} /> Open</a>
       <button className="icon-button" aria-label="Edit post" onClick={onEdit}><Settings2 size={15} /></button>
       <button className="icon-button" aria-label="Delete post" onClick={onDelete}><X size={15} /></button>
@@ -2801,9 +2786,16 @@ function StudioSettings() {
     setSaving(true)
     setError('')
     const form = Object.fromEntries(new FormData(event.currentTarget))
+    const formData = new FormData(event.currentTarget)
     const serviceList = String(form.services).split('\n').map((service) => service.trim()).filter(Boolean)
+    const enabledSocialPlatforms = formData.getAll('enabled_social_platforms').map(String)
     if (!serviceList.length || serviceList.length > 12 || serviceList.some((service) => service.length > 80)) {
       setError('Add between 1 and 12 services, each no longer than 80 characters.')
+      setSaving(false)
+      return
+    }
+    if (!enabledSocialPlatforms.length || enabledSocialPlatforms.some((platform) => !socialPlatforms.some((entry) => entry.id === platform))) {
+      setError('Enable at least one valid social platform.')
       setSaving(false)
       return
     }
@@ -2816,6 +2808,7 @@ function StudioSettings() {
       hero_subtitle: String(form.hero_subtitle).trim(),
       about_text: String(form.about_text).trim(),
       services: serviceList,
+      enabled_social_platforms: enabledSocialPlatforms,
       payment_bank_name: String(form.payment_bank_name || '').trim() || null,
       payment_account_name: String(form.payment_account_name || '').trim() || null,
       payment_account_number: String(form.payment_account_number || '').trim() || null,
@@ -2823,7 +2816,7 @@ function StudioSettings() {
       payment_note: String(form.payment_note || '').trim() || null,
       brand_color: String(form.brand_color),
       updated_at: new Date().toISOString(),
-    }).eq('id', workspace.id).select('id, studio_name, slug, contact_email, brand_color, tagline, location, hero_title, hero_subtitle, about_text, services, payment_bank_name, payment_account_name, payment_account_number, payment_reference_note, payment_note').single()
+    }).eq('id', workspace.id).select('id, studio_name, slug, contact_email, brand_color, tagline, location, hero_title, hero_subtitle, about_text, services, enabled_social_platforms, payment_bank_name, payment_account_name, payment_account_number, payment_reference_note, payment_note').single()
     if (result.error) setError(result.error.message)
     else {
       setWorkspace(result.data)
@@ -2832,7 +2825,7 @@ function StudioSettings() {
     }
     setSaving(false)
   }
-  return <main className="studio-page"><StudioPageHeader kicker="PREFERENCES / YOUR STUDIO" title="Make it<br />feel like yours." />{error && <p className="notice-error">{error}</p>}{saved && <p className="notice-success">{saved}</p>}<div className="settings-columns"><form className="settings-panel" onSubmit={saveProfile}><p className="kicker">YOUR ACCOUNT</p><h2>Your details</h2><label>Full name<input name="full_name" defaultValue={profile?.full_name || ''} required maxLength="160" /></label><label>Account email<input value={user?.email || ''} readOnly /></label><button className="button button-dark" disabled={saving}>Save profile</button></form><form key={workspace?.id || 'loading'} className="settings-panel settings-brand-form" onSubmit={saveStudio}><p className="kicker">PUBLIC STUDIO / BRAND</p><h2>Make the site yours</h2><label>Studio name<input name="studio_name" defaultValue={workspace?.studio_name || ''} required maxLength="180" /></label><label>Tagline<input name="tagline" defaultValue={workspace?.tagline || 'INDEPENDENT CREATIVE STUDIO'} required maxLength="120" /></label><label>Your location<input name="location" defaultValue={workspace?.location || 'Lagos & everywhere'} required maxLength="120" /></label><label>Homepage headline<textarea name="hero_title" rows="2" defaultValue={workspace?.hero_title || 'Ideas into\nidentity.'} required maxLength="180" /></label><label>Homepage introduction<textarea name="hero_subtitle" rows="3" defaultValue={workspace?.hero_subtitle || 'We shape brands, images and moving stories for people building something that matters.'} required maxLength="500" /></label><label>About your studio<textarea name="about_text" rows="4" defaultValue={workspace?.about_text || 'GLYPH is an independent creative studio partnering with ambitious people to build thoughtful brands and vivid visual worlds.'} required maxLength="2000" /></label><label>Services (one per line)<textarea name="services" rows="5" defaultValue={(workspace?.services?.length ? workspace.services : services).join('\n')} required /></label><label>CONTACT EMAIL<input name="contact_email" type="email" defaultValue={workspace?.contact_email || ''} maxLength="254" /></label><label>Brand accent<input name="brand_color" type="color" defaultValue={workspace?.brand_color || '#2946d8'} /></label><label>Bank name<input name="payment_bank_name" defaultValue={workspace?.payment_bank_name || ''} maxLength="120" /></label><label>Account holder name<input name="payment_account_name" defaultValue={workspace?.payment_account_name || ''} maxLength="160" /></label><label>Account number<input name="payment_account_number" defaultValue={workspace?.payment_account_number || ''} maxLength="32" /></label><label>Reference note<input name="payment_reference_note" defaultValue={workspace?.payment_reference_note || 'Use the invoice number as reference.'} maxLength="160" /></label><label>Optional payment note<textarea name="payment_note" rows="3" defaultValue={workspace?.payment_note || 'Send your transfer confirmation to the studio email after payment.'} maxLength="500" /></label><label>Portfolio address<input value={`${window.location.origin}/portfolio`} readOnly /></label><button className="button button-dark" disabled={saving || !workspace}>{saving ? 'Saving…' : 'Save public site'}</button></form></div><section className="later-features"><p className="kicker">CONNECT WHEN YOU’RE READY</p><div><span>Social account connections & scheduling</span><b>Needs your provider accounts</b></div><div><span>Custom email & community</span><b>Needs sending and hosting setup</b></div><div><span>AI inquiry assistant and quotes</span><b>Needs an approved provider and studio pricing</b></div><div><span>Bachs checkout and manual transfers</span><b>Set up Bachs credentials in Supabase</b></div></section></main>
+  return <main className="studio-page"><StudioPageHeader kicker="PREFERENCES / YOUR STUDIO" title="Make it<br />feel like yours." />{error && <p className="notice-error">{error}</p>}{saved && <p className="notice-success">{saved}</p>}<div className="settings-columns"><form className="settings-panel" onSubmit={saveProfile}><p className="kicker">YOUR ACCOUNT</p><h2>Your details</h2><label>Full name<input name="full_name" defaultValue={profile?.full_name || ''} required maxLength="160" /></label><label>Account email<input value={user?.email || ''} readOnly /></label><button className="button button-dark" disabled={saving}>Save profile</button></form><form key={workspace?.id || 'loading'} className="settings-panel settings-brand-form" onSubmit={saveStudio}><p className="kicker">PUBLIC STUDIO / BRAND</p><h2>Make the site yours</h2><label>Studio name<input name="studio_name" defaultValue={workspace?.studio_name || ''} required maxLength="180" /></label><label>Tagline<input name="tagline" defaultValue={workspace?.tagline || 'INDEPENDENT CREATIVE STUDIO'} required maxLength="120" /></label><label>Your location<input name="location" defaultValue={workspace?.location || 'Lagos & everywhere'} required maxLength="120" /></label><label>Homepage headline<textarea name="hero_title" rows="2" defaultValue={workspace?.hero_title || 'Ideas into\nidentity.'} required maxLength="180" /></label><label>Homepage introduction<textarea name="hero_subtitle" rows="3" defaultValue={workspace?.hero_subtitle || 'We shape brands, images and moving stories for people building something that matters.'} required maxLength="500" /></label><label>About your studio<textarea name="about_text" rows="4" defaultValue={workspace?.about_text || 'GLYPH is an independent creative studio partnering with ambitious people to build thoughtful brands and vivid visual worlds.'} required maxLength="2000" /></label><label>Services (one per line)<textarea name="services" rows="5" defaultValue={(workspace?.services?.length ? workspace.services : services).join('\n')} required /></label><fieldset className="social-platform-settings"><legend>Platforms for AI content</legend><p className="muted-copy">Choose where GLYPH should prepare drafts. Nothing is published automatically.</p><div>{socialPlatforms.map((platform) => <label key={platform.id}><input type="checkbox" name="enabled_social_platforms" value={platform.id} defaultChecked={(workspace?.enabled_social_platforms || socialPlatforms.map(({ id }) => id)).includes(platform.id)} />{platform.label}</label>)}</div></fieldset><label>CONTACT EMAIL<input name="contact_email" type="email" defaultValue={workspace?.contact_email || ''} maxLength="254" /></label><label>Brand accent<input name="brand_color" type="color" defaultValue={workspace?.brand_color || '#2946d8'} /></label><label>Bank name<input name="payment_bank_name" defaultValue={workspace?.payment_bank_name || ''} maxLength="120" /></label><label>Account holder name<input name="payment_account_name" defaultValue={workspace?.payment_account_name || ''} maxLength="160" /></label><label>Account number<input name="payment_account_number" defaultValue={workspace?.payment_account_number || ''} maxLength="32" /></label><label>Reference note<input name="payment_reference_note" defaultValue={workspace?.payment_reference_note || 'Use the invoice number as reference.'} maxLength="160" /></label><label>Optional payment note<textarea name="payment_note" rows="3" defaultValue={workspace?.payment_note || 'Send your transfer confirmation to the studio email after payment.'} maxLength="500" /></label><label>Portfolio address<input value={`${window.location.origin}/portfolio`} readOnly /></label><button className="button button-dark" disabled={saving || !workspace}>{saving ? 'Saving…' : 'Save public site'}</button></form></div><section className="later-features"><p className="kicker">CONNECT WHEN YOU’RE READY</p><div><span>Social account connections & scheduling</span><b>Needs your provider accounts</b></div><div><span>Custom email & community</span><b>Needs sending and hosting setup</b></div><div><span>AI inquiry assistant and quotes</span><b>Needs an approved provider and studio pricing</b></div><div><span>Bachs checkout and manual transfers</span><b>Set up Bachs credentials in Supabase</b></div></section></main>
 }
 
 function ClientPortal() {

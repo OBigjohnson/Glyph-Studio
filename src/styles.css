@@ -1254,6 +1254,9 @@ input:focus,textarea:focus,select:focus{border-color:var(--blue);box-shadow:0 0 
 .platform-instagram { background: #bd4f61; }
 .platform-facebook { background: #355d92; }
 .platform-x { background: #252525; }
+.platform-tiktok { background: #242424; }
+.platform-linkedin { background: #2867a3; }
+.platform-youtube { background: #be2929; }
 .calendar-agenda { padding: 17px; }
 .calendar-agenda > header { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-bottom: 14px; border-bottom: 1px solid var(--studio-line); }
 .calendar-agenda > header .kicker { margin: 0 0 4px; }
@@ -1272,6 +1275,8 @@ input:focus,textarea:focus,select:focus{border-color:var(--blue);box-shadow:0 0 
 .calendar-post-body > p { margin: 6px 0 9px; color: #485469; font-size: 11px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
 .calendar-status { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; color: var(--studio-muted); font-size: 10px; }
 .calendar-status select { width: auto; min-height: 28px; padding: 3px 24px 3px 7px; font-size: 10px; }
+.calendar-history { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 8px; }
+.calendar-history span { padding: 3px 6px; border-radius: 20px; background: #eef4ed; color: #46634f; font-size: 9px; }
 .calendar-post-actions { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
 .calendar-post-actions .button { min-height: 30px; padding: 5px 8px; font-size: 10px; text-decoration: none; }
 .calendar-post-actions .icon-button { width: 30px; height: 30px; margin-left: auto; }
@@ -1290,14 +1295,28 @@ input:focus,textarea:focus,select:focus{border-color:var(--blue);box-shadow:0 0 
 .campaign-review-work > div { min-width: 0; display: grid; gap: 4px; }
 .campaign-review-work b { font-size: 13px; }
 .campaign-review-work span { color: var(--studio-muted); font-size: 10px; }
+.campaign-angle { padding: 11px; border: 1px solid var(--studio-line); background: #f7f8f6; }
+.campaign-angle b,.campaign-platform-list > b { font-size: 11px; }
+.campaign-angle p { margin: 5px 0; font-size: 13px; font-weight: 650; }
+.campaign-angle small,.campaign-platform-list small { color: var(--studio-muted); font-size: 10px; line-height: 1.5; }
+.campaign-platform-list { display: grid; gap: 7px; padding: 11px; border: 1px solid var(--studio-line); }
+.campaign-platform-list > div { display: flex; gap: 5px; flex-wrap: wrap; }
+.campaign-platform-list span { padding: 4px 8px; border-radius: 20px; background: #eef4ed; color: #38584a; font-size: 10px; }
 .campaign-draft { display: grid; gap: 7px; }
 .campaign-draft > header { display: flex; justify-content: space-between; align-items: center; }
 .campaign-draft > header b { font-size: 12px; }
 .campaign-draft > header .button { min-height: 30px; padding: 5px 8px; font-size: 10px; }
+.campaign-draft > label { color: var(--studio-muted); font-size: 10px; font-weight: 600; }
 .campaign-draft textarea { width: 100%; min-height: 88px; resize: vertical; line-height: 1.5; white-space: pre-wrap; }
 .campaign-character-count { justify-self: end; color: var(--studio-muted); font-size: 10px; }
 .campaign-character-warning { color: #9b4b13; }
 .campaign-review-actions { display: flex; justify-content: space-between; gap: 8px; padding-top: 5px; }
+.social-platform-settings { display: grid; gap: 10px; margin: 0; padding: 14px; border: 1px solid var(--studio-line); }
+.social-platform-settings legend { padding-inline: 5px; font-size: 12px; font-weight: 700; }
+.social-platform-settings > p { margin: 0; font-size: 11px; }
+.social-platform-settings > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.social-platform-settings > div label { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 12px; font-weight: 500; }
+.social-platform-settings input { width: 16px; height: 16px; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; }
 
 @media (max-width: 1000px) {
@@ -1313,8 +1332,8 @@ input:focus,textarea:focus,select:focus{border-color:var(--blue);box-shadow:0 0 
   .calendar-toolbar { align-items: stretch; }
   .calendar-month-controls { gap: 5px; }
   .calendar-month-controls h2 { min-width: 0; flex: 1; font-size: 18px; }
-  .calendar-filters { justify-content: space-between; }
-  .calendar-filters button { flex: 1; padding-inline: 6px; font-size: 10px; }
+  .calendar-filters { justify-content: flex-start; overflow-x: auto; }
+  .calendar-filters button { flex: 0 0 auto; padding-inline: 8px; font-size: 10px; }
   .calendar-day { min-height: 78px; padding: 4px; }
   .calendar-day > span { width: 22px; height: 22px; font-size: 11px; }
   .calendar-day small { font-size: 8px; }
