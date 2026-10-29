@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react'
+import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { ArrowDownRight, ArrowLeft, ArrowRight, CalendarDays, Check, ChevronLeft, ChevronRight, CircleUserRound, Copy, Download, ExternalLink, FileText, FolderKanban, ImagePlus, Link2, LockKeyhole, LogOut, Menu, MessageCircle, Palette, Plus, Search, Send, Settings2, Sparkles, Trash2, Users, X } from 'lucide-react'
@@ -7,7 +7,8 @@ import { ProtectedRoute } from './auth/ProtectedRoute'
 import { supabase, supabaseUrl, isSupabaseConfigured, supabaseConfigMessage } from './lib/supabase'
 import './styles.css'
 
-const services = ['Brand identity', 'Logo design', 'Graphic design', 'Video editing', 'Videography', 'Photography']
+const services = ['Brand identity', 'Logo design', 'Graphic design', 'UI/UX', 'Mobile App Development', 'Web Development', 'Video editing', 'Videography', 'Photography']
+const portfolioSegments = ['Design', 'Branding', 'Graphic Design', 'UI/UX', 'Mobile App Development', 'Web Development', 'Video Editing', 'Videography', 'Photography']
 const studioOwnerEmail = 'specificvisuals09@gmail.com'
 const appBasePath = import.meta.env.BASE_URL.replace(/\/$/, '')
 const PublicStudioContext = createContext({ studio: null, error: '', refreshStudio: async () => {} })
@@ -250,7 +251,7 @@ function Portfolio() {
   const [error, setError] = useState('')
   useEffect(() => {
     if (!supabase) { setItems([]); return }
-    supabase.from('portfolio_items').select('id, slug, title, service, summary, cover_path, featured').eq('published', true).order('featured', { ascending: false }).order('created_at', { ascending: false })
+    supabase.from('portfolio_items').select('id, slug, title, segment, service, summary, cover_path, featured').eq('published', true).order('featured', { ascending: false }).order('created_at', { ascending: false })
       .then(async ({ data, error: queryError }) => {
         if (queryError) { setError(queryError.message); return }
         const signed = await attachPortfolioCovers(data || [])
@@ -258,12 +259,18 @@ function Portfolio() {
         setItems(signed.data)
       })
   }, [])
+  const groupedItems = items && portfolioSegments
+    .map((segment) => ({ segment, projects: items.filter((item) => item.segment === segment) }))
+    .filter((group) => group.projects.length)
   return <div className="public-site marketing-site"><SiteNav /><main className="wrap portfolio-page">{studioError && <p className="notice-error">{studioError}</p>}
     <p className="kicker">{studio?.studio_name || 'GLYPH'} / SELECTED WORK</p>
     <h1>Selected<br /><em>work.</em></h1>
     <p className="portfolio-lede">{studio?.about_text || 'Each project is a collaboration, a point of view, and a little piece of the world we want to see.'}</p>
     {error && <p className="notice-error">{error}</p>}
-    {items === null ? <div className="work-empty">Gathering the work…</div> : items.length ? <div className="work-grid">{items.map((item, index) => <WorkCard key={item.id} item={item} index={index} />)}</div> : <div className="work-empty"><span className="shape-spark">✳</span><h3>The gallery is getting ready.</h3><p>There are no published projects just yet. Check back soon or tell us what you would like to make.</p><Link className="button button-dark" to="/contact">Start a project <ArrowRight size={16} /></Link></div>}</main><SiteFooter /></div>
+    {items === null ? <div className="work-empty">Gathering the work…</div> : items.length ? groupedItems.map(({ segment, projects }) => <section className="portfolio-segment" key={segment}>
+      <header className="portfolio-segment-heading"><p className="kicker">PORTFOLIO / SEGMENT</p><h2>{segment}</h2></header>
+      <div className="work-grid">{projects.map((item, index) => <WorkCard key={item.id} item={item} index={index} />)}</div>
+    </section>) : <div className="work-empty"><span className="shape-spark">✳</span><h3>The gallery is getting ready.</h3><p>There are no published projects just yet. Check back soon or tell us what you would like to make.</p><Link className="button button-dark" to="/contact">Start a project <ArrowRight size={16} /></Link></div>}</main><SiteFooter /></div>
 }
 
 function PortfolioDetail() {
@@ -274,7 +281,7 @@ function PortfolioDetail() {
   const [error, setError] = useState('')
   useEffect(() => {
     if (!supabase) { setReady(true); return }
-    supabase.from('portfolio_items').select('id, title, service, summary, cover_path').eq('slug', slug).eq('published', true).maybeSingle()
+    supabase.from('portfolio_items').select('id, title, segment, service, summary, cover_path').eq('slug', slug).eq('published', true).maybeSingle()
       .then(async ({ data, error }) => {
         if (error) { setError(error.message); setReady(true); return }
         if (data) {
@@ -291,7 +298,7 @@ function PortfolioDetail() {
   if (!ready) return <div className="center-state">Loading case study…</div>
   if (!item) return <div className="public-site marketing-site"><SiteNav /><main className="wrap not-found">{error ? <p className="notice-error">{error}</p> : <><h1>Not found.</h1><p>This story may be private or no longer published.</p></>}<Link className="quiet-link" to="/portfolio"><ArrowLeft size={16} /> Back to the portfolio</Link></main><SiteFooter /></div>
   return <div className="public-site marketing-site"><SiteNav /><main className="wrap case-study"><Link to="/portfolio" className="quiet-link"><ArrowLeft size={16} /> All work</Link>
-    <p className="kicker">{item.service || 'SELECTED WORK'}</p>
+    <p className="kicker">{item.segment} / {item.service || 'SELECTED WORK'}</p>
     <h1>{item.title}</h1>
     {error && <p className="notice-error">{error}</p>}
     {assets.filter((asset) => asset.mime_type.startsWith('image/')).map((asset) => <img className="case-asset-image" key={asset.id} src={asset.url} alt={item.title} loading="lazy" />)}
@@ -1220,8 +1227,12 @@ function PortfolioAdmin() {
   const [groupIds, setGroupIds] = useState([])
   const [groupForm, setGroupForm] = useState(false)
   const [editingItem, setEditingItem] = useState(null)
+  const [previewItem, setPreviewItem] = useState(null)
+  const [previewAssets, setPreviewAssets] = useState(null)
+  const [publishingItem, setPublishingItem] = useState(null)
   const [saving, setSaving] = useState(false)
   const [selectedFiles, setSelectedFiles] = useState([])
+  const [importSegment, setImportSegment] = useState(portfolioSegments[0])
   const [importProgress, setImportProgress] = useState(null)
   const [importSummary, setImportSummary] = useState('')
   useEffect(() => {
@@ -1284,7 +1295,14 @@ function PortfolioAdmin() {
         return
       }
     }
-    const result = await supabase.from('portfolio_items').insert({ workspace_id: workspace.id, title, slug: String(form.slug || title).toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') }).select().single()
+    const result = await supabase.from('portfolio_items').insert({
+      workspace_id: workspace.id,
+      title,
+      segment: String(form.segment),
+      service: String(form.service),
+      summary: String(form.summary).trim(),
+      slug: String(form.slug || title).toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+    }).select().single()
     if (result.error && coverPath) {
       const cleanup = await supabase.storage.from('portfolio-media').remove([coverPath])
       if (cleanup.error) setError(`${result.error.message}. Could not clean up the uploaded cover: ${cleanup.error.message}`)
@@ -1350,6 +1368,7 @@ function PortfolioAdmin() {
         workspace_id: workspace.id,
         title: title || file.name,
         slug: `${(title || 'portfolio-item').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 150)}-${crypto.randomUUID().slice(0, 8)}`,
+        segment: importSegment,
         service: '',
         summary: '',
         cover_path: coverPath,
@@ -1392,18 +1411,48 @@ function PortfolioAdmin() {
     setImportProgress(null)
   }
 
-  async function toggle(item) {
-    if (!item.published && !item.summary.trim()) {
-      setError('Add a short project story before publishing this portfolio item.')
+  function toggle(item) {
+    if (!item.published) {
+      if (!item.summary.trim()) {
+        setError('Add a short project story before publishing this portfolio item.')
+        return
+      }
+      setPublishingItem(item)
       return
     }
-    const result = await supabase.from('portfolio_items').update({ published: !item.published, updated_at: new Date().toISOString() }).eq('id', item.id).eq('workspace_id', workspace.id).select().single()
-    if (result.error) setError(result.error.message)
+    updatePublishedStatus(item, false)
+  }
+
+  async function updatePublishedStatus(item, published, segment = item.segment) {
+    if (!supabase || !workspace) return
+    setSaving(true)
+    const result = await supabase.from('portfolio_items').update({
+      published,
+      segment,
+      updated_at: new Date().toISOString(),
+    }).eq('id', item.id).eq('workspace_id', workspace.id).select().single()
+    if (result.error) {
+      setError(result.error.message)
+      setSaving(false)
+    }
     else {
       const signed = await attachPortfolioCovers([result.data])
       if (signed.error) setError(signed.error.message)
       setItems((current) => current.map((entry) => entry.id === item.id ? signed.data[0] : entry))
+      setPublishingItem(null)
+      setSaving(false)
     }
+  }
+
+  async function publishItem(event) {
+    event.preventDefault()
+    if (!publishingItem || !workspace) return
+    const segment = String(new FormData(event.currentTarget).get('segment') || '')
+    if (!portfolioSegments.includes(segment)) {
+      setError('Choose a portfolio segment before publishing this portfolio item.')
+      return
+    }
+    await updatePublishedStatus(publishingItem, true, segment)
   }
 
   async function updatePortfolioItem(event) {
@@ -1421,6 +1470,7 @@ function PortfolioAdmin() {
     const result = await supabase.from('portfolio_items').update({
       title,
       slug,
+      segment: String(form.segment),
       service: String(form.service),
       summary: String(form.summary).trim(),
       updated_at: new Date().toISOString(),
@@ -1434,6 +1484,18 @@ function PortfolioAdmin() {
     if (signed.error) setError(signed.error.message)
     setItems((current) => current.map((item) => item.id === editingItem.id ? signed.data[0] : item))
     setEditingItem(null)
+  }
+
+  async function openPreview(item) {
+    setPreviewItem(item)
+    setPreviewAssets(null)
+    const result = await attachPortfolioAssets(item.id)
+    if (result.error) {
+      setError(result.error.message)
+      setPreviewItem(null)
+      return
+    }
+    setPreviewAssets(result.data)
   }
 
   async function groupItems(event) {
@@ -1451,6 +1513,7 @@ function PortfolioAdmin() {
       workspace_id: workspace.id,
       title,
       slug: `${title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 150)}-${crypto.randomUUID().slice(0, 8)}`,
+      segment: String(form.segment),
       service: String(form.service),
       summary: String(form.summary).trim(),
     }).select('id').single()
@@ -1518,7 +1581,8 @@ function PortfolioAdmin() {
       <div className="record-list">{items.map((item) => <article className="record-row" key={item.id}>
         <input className="portfolio-select" type="checkbox" aria-label={`Select ${item.title}`} disabled={item.published} checked={groupIds.includes(item.id)} onChange={(event) => setGroupIds((current) => event.target.checked ? [...current, item.id] : current.filter((id) => id !== item.id))} />
         <div className="work-thumb" style={item.cover_url ? { backgroundImage: `url("${item.cover_url}")` } : undefined}>✳</div>
-        <div className="record-main"><b>{item.title}</b><span>{item.service || 'Add a service'} · {item.published ? 'Public' : 'Private draft'}</span><small>{window.location.origin}{appPath(`/portfolio/${item.slug}`)}</small></div>
+        <div className="record-main"><b>{item.title}</b><span>{item.segment} · {item.service || 'Add a skill'} · {item.published ? 'Public' : 'Private draft'}</span><small>{window.location.origin}{appPath(`/portfolio/${item.slug}`)}</small></div>
+        <button className="button button-soft" onClick={() => openPreview(item)}>Preview</button>
         <button className="button button-soft" onClick={() => setEditingItem(item)}>Edit</button>
         <button className="button button-soft" onClick={() => toggle(item)}>{item.published ? 'Unpublish' : 'Publish'}</button>
       </article>)}</div>
@@ -1526,6 +1590,7 @@ function PortfolioAdmin() {
     {creating && <Modal title="Add portfolio story" onClose={() => setCreating(false)}><form onSubmit={save}>
       <label>Project title<input name="title" required maxLength="180" /></label>
       <label>Public URL slug<input name="slug" placeholder="generated-from-title" maxLength="180" /></label>
+      <label>Portfolio segment<select name="segment" defaultValue={portfolioSegments[0]}>{portfolioSegments.map((segment) => <option key={segment}>{segment}</option>)}</select></label>
       <label>Service<select name="service" defaultValue=""><option value="">Choose a service</option>{services.map((service) => <option key={service}>{service}</option>)}</select></label>
       <label>Project summary<textarea name="summary" rows="4" required maxLength="5000" /></label>
       <label>Cover image<input name="cover_image" type="file" accept="image/jpeg,image/png" /></label>
@@ -1533,6 +1598,7 @@ function PortfolioAdmin() {
     </form></Modal>}
     {importing && <Modal title="Import portfolio files" onClose={() => { if (!saving) { setImporting(false); setSelectedFiles([]) } }}><form onSubmit={importFolder}>
       <p>Select your portfolio folder. Each JPG/PNG becomes a private draft with its filename as its starting title. PDFs are attached as downloadable portfolio files. Nothing is public until you publish it.</p>
+      <label>Portfolio segment<select value={importSegment} onChange={(event) => setImportSegment(event.target.value)}>{portfolioSegments.map((segment) => <option key={segment}>{segment}</option>)}</select></label>
       <label>Portfolio folder<input type="file" accept=".jpg,.jpeg,.png,.pdf,image/jpeg,image/png,application/pdf" multiple webkitdirectory="true" onChange={(event) => setSelectedFiles(Array.from(event.target.files || []))} /></label>
       {selectedFiles.length > 0 && <p className="muted-copy">{selectedFiles.length} files selected · {(selectedFiles.reduce((sum, file) => sum + file.size, 0) / (1024 * 1024)).toFixed(1)} MB selected</p>}
       {importProgress && <p className="notice-success">Uploading {importProgress.done} of {importProgress.total} · {importProgress.failed} failed</p>}
@@ -1541,6 +1607,7 @@ function PortfolioAdmin() {
     {groupForm && <Modal title={`Group ${groupIds.length} portfolio drafts`} onClose={() => { if (!saving) setGroupForm(false) }}><form onSubmit={groupItems}>
       <p>The selected private drafts’ files will be brought together under one new case study. Their original draft records will be removed.</p>
       <label>Case study title<input name="title" required maxLength="180" /></label>
+      <label>Portfolio segment<select name="segment" defaultValue={portfolioSegments[0]}>{portfolioSegments.map((segment) => <option key={segment}>{segment}</option>)}</select></label>
       <label>Service<select name="service" defaultValue=""><option value="">Choose a service</option>{services.map((service) => <option key={service}>{service}</option>)}</select></label>
       <label>Project story<textarea name="summary" rows="4" required maxLength="5000" /></label>
       <button className="button button-dark" disabled={saving}>{saving ? 'Grouping files…' : 'Create case study'} <ArrowRight size={15} /></button>
@@ -1548,9 +1615,23 @@ function PortfolioAdmin() {
     {editingItem && <Modal title="Edit portfolio story" onClose={() => { if (!saving) setEditingItem(null) }}><form onSubmit={updatePortfolioItem}>
       <label>Project title<input name="title" required maxLength="180" defaultValue={editingItem.title} /></label>
       <label>Public URL slug<input name="slug" required maxLength="180" defaultValue={editingItem.slug} /></label>
+      <label>Portfolio segment<select name="segment" defaultValue={editingItem.segment}>{portfolioSegments.map((segment) => <option key={segment}>{segment}</option>)}</select></label>
       <label>Service<select name="service" defaultValue={editingItem.service}><option value="">Choose a service</option>{services.map((service) => <option key={service}>{service}</option>)}</select></label>
       <label>Project story<textarea name="summary" rows="5" required maxLength="5000" defaultValue={editingItem.summary} /></label>
       <button className="button button-dark" disabled={saving}>{saving ? 'Saving…' : 'Save story'} <ArrowRight size={15} /></button>
+    </form></Modal>}
+    {previewItem && <Modal title={`Preview: ${previewItem.title}`} onClose={() => { setPreviewItem(null); setPreviewAssets(null) }}>
+      <p className="muted-copy">{previewItem.segment} · {previewItem.service || 'Portfolio work'} · {previewItem.published ? 'Currently public' : 'Private draft'}</p>
+      {previewAssets === null ? <p className="loading-copy">Loading your files…</p> : previewAssets.length ? <div className="portfolio-preview-assets">
+        {previewAssets.map((asset) => asset.mime_type.startsWith('image/')
+          ? <figure key={asset.id}><img src={asset.url} alt={asset.file_name} /><figcaption>{asset.file_name}</figcaption></figure>
+          : <figure key={asset.id}><iframe title={asset.file_name} src={asset.url} /><figcaption><a href={asset.url} target="_blank" rel="noreferrer">{asset.file_name} <ExternalLink size={14} /></a></figcaption></figure>)}
+      </div> : <div className="portfolio-preview-empty"><p>No uploaded files are attached to this story yet.</p>{previewItem.cover_url && <img src={previewItem.cover_url} alt={previewItem.title} />}</div>}
+    </Modal>}
+    {publishingItem && <Modal title={`Publish: ${publishingItem.title}`} onClose={() => setPublishingItem(null)}><form onSubmit={publishItem}>
+      <p>Choose the portfolio segment where this work should appear. Visitors will see it in this segment as soon as you publish.</p>
+      <label>Publish to segment<select name="segment" required defaultValue={publishingItem.segment}>{portfolioSegments.map((segment) => <option key={segment}>{segment}</option>)}</select></label>
+      <button className="button button-dark" disabled={saving}>{saving ? 'Publishing…' : 'Publish to portfolio'} <ArrowRight size={15} /></button>
     </form></Modal>}
   </main>
 }
@@ -2310,7 +2391,19 @@ function Finance() {
   </main>
 }
 
+function pdfCurrency(amount) {
+  return new Intl.NumberFormat('en-NG', {
+    style: 'currency',
+    currency: 'NGN',
+    currencyDisplay: 'code',
+    minimumFractionDigits: 2,
+  }).format(amount || 0).replace(/\u00a0/g, ' ')
+}
+
 function PrintableInvoice({ invoice, studioName, studioEmail, onClose }) {
+  const [downloading, setDownloading] = useState(false)
+  const [downloadMessage, setDownloadMessage] = useState('')
+  const [downloadError, setDownloadError] = useState('')
   const receipt = invoice.receipt
   const items = invoice.invoice_items || []
   const amount = receipt ? Number(receipt.payment?.amount) : Number(invoice.amount)
@@ -2319,13 +2412,177 @@ function PrintableInvoice({ invoice, studioName, studioEmail, onClose }) {
     : invoicePaid(invoice)
   const balance = Math.max(Number(invoice.amount) - paidToDate, 0)
   const isClientCopy = receipt && invoice.receiptAudience === 'client'
+  async function downloadPdf() {
+    setDownloading(true)
+    setDownloadMessage('')
+    setDownloadError('')
+    try {
+      const { jsPDF } = await import('jspdf')
+      const pdf = new jsPDF({ format: 'a4', unit: 'mm' })
+      const pageWidth = pdf.internal.pageSize.getWidth()
+      const pageHeight = pdf.internal.pageSize.getHeight()
+      const left = 18
+      const right = pageWidth - left
+      let y = 22
+      const printable = (value) => String(value ?? '').normalize('NFKD').replace(/[^\x20-\x7E]/g, ' ')
+      const writeWrapped = (value, x, top, maxWidth, lineHeight = 5) => {
+        const lines = pdf.splitTextToSize(printable(value), maxWidth)
+        if (top + lines.length * lineHeight > pageHeight - 20) {
+          pdf.addPage()
+          top = 20
+        }
+        pdf.text(lines, x, top)
+        return top + lines.length * lineHeight
+      }
+      const documentLabel = isClientCopy ? 'PAYMENT CONFIRMATION' : receipt ? 'PAYMENT RECEIPT' : 'INVOICE'
+      pdf.setFont('helvetica', 'bold')
+      pdf.setFontSize(18)
+      pdf.text(printable(studioName), left, y)
+      pdf.setFont('helvetica', 'normal')
+      pdf.setFontSize(9)
+      if (studioEmail) pdf.text(printable(studioEmail), left, y + 6)
+      pdf.setFont('helvetica', 'bold')
+      pdf.setFontSize(12)
+      pdf.text(documentLabel, right, y, { align: 'right' })
+      y += 20
+      pdf.setDrawColor(220, 218, 228)
+      pdf.line(left, y, right, y)
+      y += 10
+      pdf.setFontSize(9)
+      pdf.setTextColor(100, 96, 112)
+      pdf.text(receipt ? 'RECEIPT NUMBER' : 'INVOICE NUMBER', left, y)
+      pdf.text('ISSUED', left + 82, y)
+      pdf.setTextColor(30, 28, 38)
+      pdf.setFont('helvetica', 'bold')
+      pdf.setFontSize(11)
+      pdf.text(printable(receipt?.receipt_number || invoice.number), left, y + 6)
+      pdf.text(new Date(receipt?.issued_at || invoice.created_at || Date.now()).toLocaleDateString(), left + 82, y + 6)
+      y += 23
+      pdf.setFont('helvetica', 'normal')
+      pdf.setTextColor(100, 96, 112)
+      pdf.setFontSize(9)
+      pdf.text(isClientCopy ? 'PAID BY' : receipt ? 'RECEIVED FROM' : 'BILLED TO', left, y)
+      y += 6
+      pdf.setFont('helvetica', 'bold')
+      pdf.setTextColor(30, 28, 38)
+      pdf.setFontSize(11)
+      pdf.text(printable(invoice.clients?.name || 'Client'), left, y)
+      y += 5
+      pdf.setFont('helvetica', 'normal')
+      pdf.setFontSize(9)
+      for (const detail of [invoice.clients?.company, invoice.clients?.email].filter(Boolean)) {
+        y = writeWrapped(detail, left, y, right - left, 5)
+      }
+      if (isClientCopy) {
+        y += 5
+        pdf.setFont('helvetica', 'bold')
+        pdf.text(`PAID TO: ${printable(studioName)}`, left, y)
+        y += 6
+        if (studioEmail) y = writeWrapped(studioEmail, left, y, right - left, 5)
+      }
+      y += 7
+      pdf.setFillColor(245, 244, 248)
+      pdf.rect(left, y - 5, right - left, 9, 'F')
+      pdf.setFont('helvetica', 'bold')
+      pdf.setFontSize(8)
+      pdf.setTextColor(90, 86, 102)
+      pdf.text('DESCRIPTION', left + 2, y)
+      pdf.text('QTY', left + 99, y, { align: 'right' })
+      pdf.text('UNIT PRICE', left + 137, y, { align: 'right' })
+      pdf.text('AMOUNT', right - 2, y, { align: 'right' })
+      y += 9
+      pdf.setFont('helvetica', 'normal')
+      pdf.setFontSize(9)
+      pdf.setTextColor(35, 33, 42)
+      for (const item of items) {
+        const descriptionLines = pdf.splitTextToSize(printable(item.description), 88)
+        const rowHeight = Math.max(descriptionLines.length * 5, 8)
+        if (y + rowHeight > pageHeight - 38) {
+          pdf.addPage()
+          y = 20
+        }
+        pdf.text(descriptionLines, left + 2, y)
+        pdf.text(printable(Number(item.quantity)), left + 99, y, { align: 'right' })
+        pdf.text(pdfCurrency(Number(item.unit_amount)), left + 137, y, { align: 'right' })
+        pdf.text(pdfCurrency(Number(item.quantity) * Number(item.unit_amount)), right - 2, y, { align: 'right' })
+        y += rowHeight
+        pdf.setDrawColor(235, 233, 239)
+        pdf.line(left, y - 2, right, y - 2)
+      }
+      y += 5
+      const totals = [
+        ['INVOICE TOTAL', pdfCurrency(Number(invoice.amount))],
+        ['PAID TO DATE', pdfCurrency(paidToDate)],
+        ['BALANCE LEFT TO PAY', pdfCurrency(balance)],
+        [isClientCopy ? 'AMOUNT YOU PAID' : receipt ? 'AMOUNT RECEIVED' : 'INVOICE TOTAL', pdfCurrency(amount)],
+      ]
+      const blockHeight = totals.length * 8 + 5
+      if (y + blockHeight > pageHeight - 20) {
+        pdf.addPage()
+        y = 20
+      }
+      y += 4
+      pdf.setDrawColor(220, 218, 228)
+      pdf.line(left, y, right, y)
+      y += 8
+      for (const [label, value] of totals) {
+        pdf.setFont('helvetica', 'normal')
+        pdf.setFontSize(9)
+        pdf.setTextColor(90, 86, 102)
+        pdf.text(label, left, y)
+        pdf.setFont('helvetica', 'bold')
+        pdf.setTextColor(30, 28, 38)
+        pdf.text(value, right, y, { align: 'right' })
+        y += 8
+      }
+      const paidDate = receipt?.payment?.paid_at || receipt?.issued_at
+      const footer = receipt
+        ? `${isClientCopy ? 'Payment confirmed' : 'Payment received'} · ${pdfCurrency(amount)} on ${paidDate ? new Date(paidDate).toLocaleDateString() : 'the issue date'}. Balance remaining: ${pdfCurrency(balance)}.`
+        : 'Please use the payment instructions provided by the studio. Thank you for your business.'
+      y = writeWrapped(footer, left, Math.min(y + 8, pageHeight - 25), right - left, 5)
+      if (y > pageHeight - 12) {
+        pdf.addPage()
+        pdf.text(printable(footer), left, 20, { maxWidth: right - left })
+      }
+
+      const identifier = receipt?.receipt_number || invoice.number || 'document'
+      const filename = `${receipt ? 'Receipt' : 'Invoice'}-${String(identifier).replace(/[^a-zA-Z0-9_-]/g, '-')}.pdf`
+      const nativeBridge = window.ReactNativeWebView
+      if (nativeBridge?.postMessage) {
+        const dataUri = pdf.output('datauristring')
+        nativeBridge.postMessage(JSON.stringify({
+          type: 'glyph.document.download',
+          filename,
+          data: dataUri.slice(dataUri.indexOf(',') + 1),
+        }))
+        setDownloadMessage('Opening your mobile PDF save options…')
+      } else {
+        const url = URL.createObjectURL(pdf.output('blob'))
+        const link = document.createElement('a')
+        link.href = url
+        link.download = filename
+        document.body.append(link)
+        link.click()
+        link.remove()
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+        setDownloadMessage(`${receipt ? 'Receipt' : 'Invoice'} PDF downloaded.`)
+      }
+    } catch (downloadError) {
+      setDownloadMessage('')
+      setDownloadError(downloadError instanceof Error ? `Could not create the PDF: ${downloadError.message}` : 'Could not create the PDF.')
+    } finally {
+      setDownloading(false)
+    }
+  }
   return <div className="print-document-overlay">
-    <div className="print-document-actions"><button className="button button-soft" onClick={onClose}>Close</button><button className="button button-dark" onClick={() => window.print()}>Print / Save PDF</button></div>
+    <div className="print-document-actions"><button className="button button-soft" onClick={onClose}>Close</button><button className="button button-dark" onClick={downloadPdf} disabled={downloading}>{downloading ? 'Preparing PDF…' : `Download ${receipt ? 'receipt' : 'invoice'} PDF`} <Download size={15} /></button><button className="button button-soft" onClick={() => window.print()}>Print</button></div>
+    {downloadError && <p className="notice-error print-document-download-status" role="alert">{downloadError}</p>}
+    {downloadMessage && <p className="print-document-download-status" role="status">{downloadMessage}</p>}
     <article className="print-document">
       <header><div className="print-document-brand"><img src={publicAsset('assets/glyph-logo.jpg')} alt="" /><div><b>{studioName}</b>{studioEmail && <span>{studioEmail}</span>}</div></div><span className="print-document-label">{isClientCopy ? 'PAYMENT CONFIRMATION' : receipt ? 'PAYMENT RECEIPT' : 'INVOICE'}</span></header>
       <div className="print-document-meta"><div><small>{receipt ? 'RECEIPT NUMBER' : 'INVOICE NUMBER'}</small><b>{receipt?.receipt_number || invoice.number}</b></div><div><small>ISSUED</small><b>{new Date(receipt?.issued_at || invoice.created_at || Date.now()).toLocaleDateString()}</b></div>{!receipt && invoice.due_date && <div><small>DUE DATE</small><b>{new Date(`${invoice.due_date}T00:00:00`).toLocaleDateString()}</b></div>}</div>
       <section className="print-document-client"><small>{isClientCopy ? 'PAID BY' : receipt ? 'RECEIVED FROM' : 'BILLED TO'}</small><b>{invoice.clients?.name || 'Client'}</b>{invoice.clients?.company && <span>{invoice.clients.company}</span>}{invoice.clients?.email && <span>{invoice.clients.email}</span>}{isClientCopy && <><small>PAID TO</small><b>{studioName}</b>{studioEmail && <span>{studioEmail}</span>}</>}</section>
-      <table><thead><tr><th>Description</th><th>Qty</th><th>Unit price</th><th>Amount</th></tr></thead><tbody>{items.map((item) => <tr key={item.id || item.description}><td>{item.description}</td><td>{Number(item.quantity)}</td><td>{money(Number(item.unit_amount))}</td><td>{money(Number(item.quantity) * Number(item.unit_amount))}</td></tr>)}</tbody></table>
+      <table><thead><tr><th>Description</th><th>Qty</th><th>Unit price</th><th>Amount</th></tr></thead><tbody>{items.map((item) => <tr key={item.id || item.description}><td data-label="Description">{item.description}</td><td data-label="Qty">{Number(item.quantity)}</td><td data-label="Unit price">{money(Number(item.unit_amount))}</td><td data-label="Amount">{money(Number(item.quantity) * Number(item.unit_amount))}</td></tr>)}</tbody></table>
       <div className="print-document-total"><span>{isClientCopy ? 'AMOUNT YOU PAID' : receipt ? 'AMOUNT RECEIVED' : 'INVOICE TOTAL'}</span><b>{money(amount)}</b></div>
       <div className="print-document-balance"><div><span>INVOICE TOTAL</span><b>{money(Number(invoice.amount))}</b></div><div><span>PAID TO DATE</span><b>{money(paidToDate)}</b></div><div><span>BALANCE LEFT TO PAY</span><b>{money(balance)}</b></div></div>
       <footer>{receipt ? isClientCopy
@@ -3023,8 +3280,20 @@ function MobileStudioTheme() {
   return null
 }
 
+function RouteScrollReset() {
+  const { pathname } = useLocation()
+  useLayoutEffect(() => {
+    const root = document.documentElement
+    const previousBehavior = root.style.scrollBehavior
+    root.style.scrollBehavior = 'auto'
+    window.scrollTo(0, 0)
+    root.style.scrollBehavior = previousBehavior
+  }, [pathname])
+  return null
+}
+
 function App() {
-  return <BrowserRouter basename={appBasePath || undefined} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><MobileStudioTheme /><AuthProvider><PublicStudioProvider><Routes>
+  return <BrowserRouter basename={appBasePath || undefined} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><RouteScrollReset /><MobileStudioTheme /><AuthProvider><PublicStudioProvider><Routes>
     <Route path="/" element={<PublicHome />} />
     <Route path="/portfolio" element={<Portfolio />} />
     <Route path="/portfolio/:slug" element={<PortfolioDetail />} />

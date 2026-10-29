@@ -13,7 +13,7 @@
     },
     "android": {
       "package": "com.glyphstudio.studio",
-      "versionCode": 2,
+      "versionCode": 3,
       "adaptiveIcon": {
         "backgroundColor": "#3048dc",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -28,6 +28,9 @@
         "projectId": "e2e85785-e6ad-4931-a5ab-1e4a4b9ba306"
       }
     },
-    "owner": "obigjohnson"
+    "owner": "obigjohnson",
+    "plugins": [
+      "expo-sharing"
+    ]
   }
 }

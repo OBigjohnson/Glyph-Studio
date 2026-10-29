@@ -1,9 +1,7 @@
 import { StatusBar as ExpoStatusBar } from 'expo-status-bar';
 import { useEffect, useRef, useState } from 'react';
-import studioLogo from './assets/glyph-logo.png';
 import {
-  Animated,
-  ActivityIndicator,
+  Alert,
   BackHandler,
   Platform,
   StatusBar,
@@ -13,6 +11,8 @@ import {
   View,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 
 const STUDIO_HOST = 'glyphstudio.cv';
 const STUDIO_URL = `https://${STUDIO_HOST}/studio?app=mobile`;
@@ -30,11 +30,10 @@ function isAllowedAppUrl(uri) {
 
 export default function App() {
   const webView = useRef(null);
+  const savingDocument = useRef(false);
   const [canGoBack, setCanGoBack] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
   const [hasLoadError, setHasLoadError] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
-  const [logoRotation] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -46,81 +45,92 @@ export default function App() {
     return () => subscription.remove();
   }, [canGoBack]);
 
-  useEffect(() => {
-    if (!isLoading) return undefined;
-    const animation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(logoRotation, {
-          toValue: 1,
-          duration: 1800,
-          useNativeDriver: true,
-        }),
-        Animated.timing(logoRotation, {
-          toValue: 0,
-          duration: 1800,
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    animation.start();
-    return () => animation.stop();
-  }, [isLoading, logoRotation]);
-
   function retry() {
     setHasLoadError(false);
-    setIsLoading(true);
     setReloadKey((key) => key + 1);
+  }
+
+  async function handleWebViewMessage(event) {
+    if (savingDocument.current) return;
+    let message;
+    try {
+      message = JSON.parse(event.nativeEvent.data);
+    } catch {
+      return;
+    }
+    if (message?.type !== 'glyph.document.download') return;
+    if (
+      typeof message.data !== 'string'
+      || message.data.length > 20_000_000
+      || !/^[A-Za-z0-9+/]+={0,2}$/.test(message.data)
+    ) {
+      Alert.alert('Could not save PDF', 'The document data is invalid or too large.');
+      return;
+    }
+
+    savingDocument.current = true;
+    try {
+      const fileName = `${String(message.filename || 'GLYPH-document')
+        .replace(/\.pdf$/i, '')
+        .replace(/[^a-zA-Z0-9_-]/g, '-')}-${Date.now()}`;
+      if (Platform.OS === 'android') {
+        const downloadFolder = FileSystem.StorageAccessFramework.getUriForDirectoryInRoot('Download');
+        const permission = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync(downloadFolder);
+        if (!permission.granted) {
+          Alert.alert('Save cancelled', 'Choose a folder when prompted to save your PDF.');
+          return;
+        }
+        const fileUri = await FileSystem.StorageAccessFramework.createFileAsync(
+          permission.directoryUri,
+          fileName,
+          'application/pdf',
+        );
+        await FileSystem.writeAsStringAsync(fileUri, message.data, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        Alert.alert('PDF saved', 'Your document has been saved to the selected folder.');
+      } else {
+        const fileUri = `${FileSystem.documentDirectory}${fileName}.pdf`;
+        await FileSystem.writeAsStringAsync(fileUri, message.data, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        if (!(await Sharing.isAvailableAsync())) {
+          Alert.alert('PDF saved', 'Your document is saved in the GLYPH Studio app documents.');
+          return;
+        }
+        await Sharing.shareAsync(fileUri, {
+          mimeType: 'application/pdf',
+          UTI: 'com.adobe.pdf',
+          dialogTitle: 'Save receipt PDF',
+        });
+      }
+    } catch (error) {
+      Alert.alert('Could not save PDF', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      savingDocument.current = false;
+    }
   }
 
   return (
     <View style={styles.container}>
       <ExpoStatusBar style="light" />
-      <WebView
-        key={reloadKey}
-        ref={webView}
-        source={{ uri: STUDIO_URL }}
-        originWhitelist={[`https://${STUDIO_HOST}`]}
-        javaScriptEnabled
-        domStorageEnabled
-        javaScriptCanOpenWindowsAutomatically={false}
-        setSupportMultipleWindows={false}
-        mixedContentMode="never"
-        onShouldStartLoadWithRequest={(request) => isAllowedAppUrl(request.url)}
-        onNavigationStateChange={(state) => setCanGoBack(state.canGoBack)}
-        onLoadStart={() => {
-          setIsLoading(true);
-          setHasLoadError(false);
-        }}
-        onLoadEnd={() => setIsLoading(false)}
-        onError={() => {
-          setIsLoading(false);
-          setHasLoadError(true);
-        }}
-        style={styles.webView}
-      />
-      {isLoading && !hasLoadError && (
-        <View style={styles.loading}>
-          <Animated.Image
-            source={studioLogo}
-            style={[
-              styles.logo,
-              {
-                transform: [
-                  { perspective: 700 },
-                  {
-                    rotateY: logoRotation.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: ['-12deg', '12deg'],
-                    }),
-                  },
-                ],
-              },
-            ]}
-          />
-          <ActivityIndicator color="#7790ff" size="large" />
-          <Text style={styles.loadingText}>Preparing your studio</Text>
-          <Text style={styles.loadingCaption}>A thoughtful space for your work.</Text>
-        </View>
+      {!hasLoadError && (
+        <WebView
+          key={reloadKey}
+          ref={webView}
+          source={{ uri: STUDIO_URL }}
+          originWhitelist={[`https://${STUDIO_HOST}`]}
+          javaScriptEnabled
+          domStorageEnabled
+          javaScriptCanOpenWindowsAutomatically={false}
+          setSupportMultipleWindows={false}
+          mixedContentMode="never"
+          onShouldStartLoadWithRequest={(request) => isAllowedAppUrl(request.url)}
+          onNavigationStateChange={(state) => setCanGoBack(state.canGoBack)}
+          onMessage={handleWebViewMessage}
+          onError={() => setHasLoadError(true)}
+          style={styles.webView}
+        />
       )}
       {hasLoadError && (
         <View style={styles.error}>
@@ -144,30 +154,6 @@ const styles = StyleSheet.create({
   webView: {
     flex: 1,
     backgroundColor: '#090c12',
-  },
-  loading: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#090c12',
-  },
-  logo: {
-    width: 76,
-    height: 76,
-    marginBottom: 28,
-    borderRadius: 19,
-  },
-  loadingText: {
-    color: '#eef1ff',
-    marginTop: 20,
-    fontSize: 16,
-    fontWeight: '700',
-    letterSpacing: 0.2,
-  },
-  loadingCaption: {
-    color: '#7e89a2',
-    fontSize: 12,
-    marginTop: 6,
   },
   error: {
     ...StyleSheet.absoluteFillObject,

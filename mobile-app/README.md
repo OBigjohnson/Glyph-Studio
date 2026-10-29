@@ -15,6 +15,11 @@ layout, five-tab navigation, and reduced-motion-aware 3D transitions without
 changing the desktop studio. The production website must be deployed before an
 EAS build can display these visual changes.
 
+Receipts and invoices can be downloaded as PDFs from their preview. Android
+lets you choose a folder (including Downloads); iOS opens the system share
+sheet for saving or sending the PDF. The native PDF handoff requires a new
+mobile app build after the website is deployed.
+
 The EAS project is linked to `@obigjohnson/glyph-studio-mobile`.
 
 ## Create an installable Android build
