@@ -21,7 +21,7 @@ const portfolioFileMimeTypes = new Set([
   'video/3gpp',
   'video/x-m4v',
 ])
-const portfolioFileSizeLimit = 50 * 1024 * 1024
+const portfolioFileSizeLimit = 1024 * 1024 * 1024
 const studioOwnerEmail = 'specificvisuals09@gmail.com'
 const appBasePath = import.meta.env.BASE_URL.replace(/\/$/, '')
 const PublicStudioContext = createContext({ studio: null, error: '', refreshStudio: async () => {} })
@@ -1293,7 +1293,7 @@ function PortfolioAdmin() {
       return !portfolioFileMimeTypes.has(mimeType) || file.size <= 0 || file.size > portfolioFileSizeLimit
     })
     if (!invalid.length) return ''
-    return `${invalid.length} file(s) are unsupported or over the 50 MB per-file limit. Use JPG, PNG, PDF, MP4, MOV, WebM, AVI, MPEG, or 3GP files.`
+    return `${invalid.length} file(s) are unsupported or over the 1 GB per-file limit. Use JPG, PNG, PDF, MP4, MOV, WebM, AVI, MPEG, or 3GP files.`
   }
 
   async function removePortfolioFiles(paths) {
@@ -1437,7 +1437,7 @@ function PortfolioAdmin() {
       return !portfolioFileMimeTypes.has(mimeType) || file.size <= 0 || file.size > portfolioFileSizeLimit
     })
     if (invalid.length) {
-      setError(`${invalid.length} selected file(s) are unsupported or over the 50 MB per-file limit. Use JPG, PNG, PDF, MP4, MOV, WebM, AVI, MPEG, or 3GP files.`)
+      setError(`${invalid.length} selected file(s) are unsupported or over the 1 GB per-file limit. Use JPG, PNG, PDF, MP4, MOV, WebM, AVI, MPEG, or 3GP files.`)
       return
     }
     setSaving(true)
@@ -1710,7 +1710,7 @@ function PortfolioAdmin() {
   }
   return <main className="studio-page">
     <StudioPageHeader kicker="PUBLIC PRESENCE / PORTFOLIO" title="Your work,<br />out in the world." action={<div className="portfolio-actions">
-      {groupIds.length >= 2 && <button className="button button-soft" onClick={() => setGroupForm(true)}>Group {groupIds.length} drafts</button>}
+      {groupIds.length >= 2 && <button className="button button-soft" onClick={() => setGroupForm(true)}>Create project from {groupIds.length} drafts</button>}
       <button className="button button-yellow" disabled={!workspace} onClick={() => { setStoryFiles([]); setCreating(true) }}><Plus size={16} /> Upload files</button>
       <button className="button button-soft" disabled={!workspace} onClick={() => setImporting(true)}><FolderKanban size={15} /> Import folder</button>
     </div>} />
@@ -1733,25 +1733,25 @@ function PortfolioAdmin() {
       <label>Portfolio segment<select name="segment" defaultValue={portfolioSegments[0]}>{portfolioSegments.map((segment) => <option key={segment}>{segment}</option>)}</select></label>
       <label>Service<select name="service" defaultValue=""><option value="">Choose a service</option>{services.map((service) => <option key={service}>{service}</option>)}</select></label>
       <label>Project summary<textarea name="summary" rows="4" required maxLength="5000" /></label>
-      <label>Choose file(s) (image, video, or PDF)<input name="portfolio_files" type="file" accept="image/jpeg,image/png,application/pdf,video/mp4,video/quicktime,video/webm,video/x-msvideo,video/mpeg,video/3gpp,video/x-m4v" multiple onChange={(event) => setStoryFiles(Array.from(event.target.files || []))} /><small className="muted-copy">You can choose one file or several. Up to 50 MB per file. The first image selected becomes the portfolio cover. Uploads stay private until you publish.</small></label>
+      <label>Choose file(s) (image, video, or PDF)<input name="portfolio_files" type="file" accept="image/jpeg,image/png,application/pdf,video/mp4,video/quicktime,video/webm,video/x-msvideo,video/mpeg,video/3gpp,video/x-m4v" multiple onChange={(event) => setStoryFiles(Array.from(event.target.files || []))} /><small className="muted-copy">Choose one file or several to keep together in this project. Up to 1 GB per file. The first image selected becomes the portfolio cover. Uploads stay private until you publish.</small></label>
       {storyFiles.length > 0 && <p className="muted-copy">{storyFiles.length} file(s) selected · {(storyFiles.reduce((sum, file) => sum + file.size, 0) / (1024 * 1024)).toFixed(1)} MB</p>}
       <button className="button button-dark" disabled={saving}>{saving ? 'Uploading & saving…' : 'Save as draft'} <ArrowRight size={15} /></button>
     </form></Modal>}
     {importing && <Modal title="Import portfolio files" onClose={() => { if (!saving) { setImporting(false); setSelectedFiles([]) } }}><form onSubmit={importFolder}>
-      <p>Select your portfolio folder. Each selected file becomes a private draft with its filename as the starting title. Nothing is public until you publish it.</p>
+      <p>Select your portfolio folder. Each selected file becomes a private draft with its filename as the starting title. Select related drafts afterward and create a project to bring their files together. Nothing is public until you publish it.</p>
       <label>Portfolio segment<select value={importSegment} onChange={(event) => setImportSegment(event.target.value)}>{portfolioSegments.map((segment) => <option key={segment}>{segment}</option>)}</select></label>
       <label>Portfolio folder<input type="file" accept=".jpg,.jpeg,.png,.pdf,.mp4,.mov,.webm,.avi,.mpeg,.mpg,.3gp,.m4v,image/jpeg,image/png,application/pdf,video/*" multiple webkitdirectory="true" onChange={(event) => setSelectedFiles(Array.from(event.target.files || []))} /></label>
       {selectedFiles.length > 0 && <p className="muted-copy">{selectedFiles.length} files selected · {(selectedFiles.reduce((sum, file) => sum + file.size, 0) / (1024 * 1024)).toFixed(1)} MB selected</p>}
       {importProgress && <p className="notice-success">Uploading {importProgress.done} of {importProgress.total} · {importProgress.failed} failed</p>}
       <button className="button button-dark" disabled={saving || !selectedFiles.length}>{saving ? 'Importing files…' : 'Upload selected files'} <ArrowRight size={15} /></button>
     </form></Modal>}
-    {groupForm && <Modal title={`Group ${groupIds.length} portfolio drafts`} onClose={() => { if (!saving) setGroupForm(false) }}><form onSubmit={groupItems}>
-      <p>The selected private drafts’ files will be brought together under one new case study. Their original draft records will be removed.</p>
+    {groupForm && <Modal title={`Create a project from ${groupIds.length} drafts`} onClose={() => { if (!saving) setGroupForm(false) }}><form onSubmit={groupItems}>
+      <p>The selected private drafts’ files will be brought together under one project and case study. Their original draft records will be removed.</p>
       <label>Case study title<input name="title" required maxLength="180" /></label>
       <label>Portfolio segment<select name="segment" defaultValue={portfolioSegments[0]}>{portfolioSegments.map((segment) => <option key={segment}>{segment}</option>)}</select></label>
       <label>Service<select name="service" defaultValue=""><option value="">Choose a service</option>{services.map((service) => <option key={service}>{service}</option>)}</select></label>
       <label>Project story<textarea name="summary" rows="4" required maxLength="5000" /></label>
-      <button className="button button-dark" disabled={saving}>{saving ? 'Grouping files…' : 'Create case study'} <ArrowRight size={15} /></button>
+      <button className="button button-dark" disabled={saving}>{saving ? 'Creating project…' : 'Create project'} <ArrowRight size={15} /></button>
     </form></Modal>}
     {editingItem && <Modal title="Edit portfolio story" onClose={() => { if (!saving) { setStoryFiles([]); setEditingItem(null) } }}><form onSubmit={updatePortfolioItem}>
       <label>Project title<input name="title" required maxLength="180" defaultValue={editingItem.title} /></label>
@@ -1759,7 +1759,7 @@ function PortfolioAdmin() {
       <label>Portfolio segment<select name="segment" defaultValue={editingItem.segment}>{portfolioSegments.map((segment) => <option key={segment}>{segment}</option>)}</select></label>
       <label>Service<select name="service" defaultValue={editingItem.service}><option value="">Choose a service</option>{services.map((service) => <option key={service}>{service}</option>)}</select></label>
       <label>Project story<textarea name="summary" rows="5" required maxLength="5000" defaultValue={editingItem.summary} /></label>
-      <label>Add files (images, video, or PDF)<input name="portfolio_files" type="file" accept="image/jpeg,image/png,application/pdf,video/mp4,video/quicktime,video/webm,video/x-msvideo,video/mpeg,video/3gpp,video/x-m4v" multiple onChange={(event) => setStoryFiles(Array.from(event.target.files || []))} /><small className="muted-copy">Up to 50 MB per file. New files are added to this story; existing files are kept.</small></label>
+      <label>Add files (images, video, or PDF)<input name="portfolio_files" type="file" accept="image/jpeg,image/png,application/pdf,video/mp4,video/quicktime,video/webm,video/x-msvideo,video/mpeg,video/3gpp,video/x-m4v" multiple onChange={(event) => setStoryFiles(Array.from(event.target.files || []))} /><small className="muted-copy">Up to 1 GB per file. New files are added to this project; existing files are kept.</small></label>
       {storyFiles.length > 0 && <p className="muted-copy">{storyFiles.length} new file(s) selected · {(storyFiles.reduce((sum, file) => sum + file.size, 0) / (1024 * 1024)).toFixed(1)} MB</p>}
       <button className="button button-dark" disabled={saving}>{saving ? 'Uploading & saving…' : 'Save story'} <ArrowRight size={15} /></button>
     </form></Modal>}

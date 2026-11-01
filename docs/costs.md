@@ -18,12 +18,14 @@ and provider eligibility can change the final cost.
 
 ### Portfolio hosting caveat
 
-The existing importer accepts files up to 50 MB. Cloudflare Pages Free has a
-25 MiB per-file limit. Of the 169 imported files, one file (`CPFN 2.png`) is
-about 31 MiB and cannot be deployed as a Pages static asset without
+The portfolio importer accepts files up to 1 GiB each, subject to the
+Supabase project's global Storage upload limit and plan. Cloudflare Pages Free
+has a 25 MiB per-file limit. Of the 169 imported files, one file (`CPFN 2.png`)
+is about 31 MiB and cannot be deployed as a Pages static asset without
 optimization. Leave that asset in Supabase Storage or create an optimized
 copy. Keeping the private Supabase Storage bucket is the simpler first launch
-path, but storage and bandwidth quotas still apply.
+path, but storage and bandwidth quotas still apply; a large video can use a
+substantial share of the Free project's 1 GB total Storage allowance.
 
 ## Social accounts and scheduled posts
 

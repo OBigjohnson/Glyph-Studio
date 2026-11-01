@@ -4,8 +4,10 @@
    Signup creates your private workspace automatically.
 2. Open **Studio → Portfolio**. Use **Upload files** to upload one file or
    multiple files directly from your computer or phone and enter the project's
-   title, service, summary, and segment. You can also use **Import folder** for
-   batches of separate projects.
+   title, service, summary, and segment. Multiple files selected together
+   become one project. You can also use **Import folder** for batches of
+   separate projects, then select related private drafts and create one project
+   from them.
 3. Choose a segment (Design, Branding, Graphic Design, UI/UX, Mobile App
    Development, Web Development, Video Editing, Videography, or Photography),
    then import images, PDFs, and supported videos (MP4, MOV, WebM, AVI, MPEG,
@@ -19,11 +21,10 @@
    study to make the files private again.
 
 Files are uploaded sequentially. Resumable uploads are used for files larger
-than 6 MB. JPG, PNG, PDF, and supported videos are limited to 50 MB per file.
-Keep this page open until the upload finishes; failed files are reported and
-may be retried.
+than 6 MB. JPG, PNG, PDF, and supported videos are limited to 1 GB per file.
+Set the Supabase project's global Storage file-size limit to 1 GB (if allowed
+by its plan), then apply pending migrations with `supabase db push`. Keep this
+page open until the upload finishes; failed files are reported and may be
+retried.
 Never include client-confidential work in a public case study unless you have
 permission to publish it.
-
-Apply pending Supabase migrations with `supabase db push` before uploading
-videos.
