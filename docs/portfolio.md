@@ -19,6 +19,10 @@
 5. Choose the segment again when publishing a reviewed case study. Published
    work appears under its segment on the public portfolio. Unpublish a case
    study to make the files private again.
+6. To start over, open **Studio → Portfolio** and choose **Clear portfolio**.
+   Confirming permanently deletes every published and draft portfolio entry in
+   the current workspace and its linked or unlinked portfolio uploads. It does
+   not delete branding assets or images generated for the social calendar.
 
 Files are uploaded sequentially. Resumable uploads are used for files larger
 than 6 MB. JPG, PNG, PDF, and supported videos are limited to 1 GB per file.

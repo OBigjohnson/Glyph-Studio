@@ -1244,6 +1244,7 @@ function PortfolioAdmin() {
   const [creating, setCreating] = useState(false)
   const [importing, setImporting] = useState(false)
   const [grouping, setGrouping] = useState(false)
+  const [confirmClearPortfolio, setConfirmClearPortfolio] = useState(false)
   const [groupIds, setGroupIds] = useState([])
   const [groupForm, setGroupForm] = useState(false)
   const [editingItem, setEditingItem] = useState(null)
@@ -1368,6 +1369,72 @@ function PortfolioAdmin() {
     const signed = await attachPortfolioCovers(data || [])
     if (signed.error) setError(signed.error.message)
     setItems(signed.data)
+  }
+
+  async function clearPortfolio() {
+    if (!supabase || !workspace) {
+      setError('Connect Supabase and load your studio workspace before clearing the portfolio.')
+      return
+    }
+    setSaving(true)
+    setError('')
+    try {
+      const [itemsResult, assetsResult] = await Promise.all([
+        supabase.from('portfolio_items')
+          .select('cover_path')
+          .eq('workspace_id', workspace.id),
+        supabase.from('portfolio_assets')
+          .select('storage_path')
+          .eq('workspace_id', workspace.id),
+      ])
+      const queryFailure = itemsResult.error || assetsResult.error
+      if (queryFailure) {
+        setError(`Could not load all portfolio files for cleanup: ${queryFailure.message}`)
+        return
+      }
+      const paths = [...new Set([
+        ...(itemsResult.data || []).map((item) => item.cover_path),
+        ...(assetsResult.data || []).map((asset) => asset.storage_path),
+      ].filter(Boolean))]
+      const workspaceFiles = []
+      for (let offset = 0; ; offset += 100) {
+        const { data: files, error: listError } = await supabase.storage
+          .from('portfolio-media')
+          .list(workspace.id, { limit: 100, offset })
+        if (listError) {
+          setError(`Could not list all portfolio files for cleanup: ${listError.message}`)
+          return
+        }
+        workspaceFiles.push(...(files || [])
+          .filter((file) => file.id && file.name)
+          .map((file) => `${workspace.id}/${file.name}`))
+        if (!files || files.length < 100) break
+      }
+      const allPaths = [...new Set([...paths, ...workspaceFiles])]
+      for (let index = 0; index < allPaths.length; index += 100) {
+        const cleanupError = await removePortfolioFiles(allPaths.slice(index, index + 100))
+        if (cleanupError) {
+          setError(`Could not remove portfolio files: ${cleanupError}. No portfolio entries were deleted.`)
+          return
+        }
+      }
+      const { error: deleteError } = await supabase.from('portfolio_items')
+        .delete()
+        .eq('workspace_id', workspace.id)
+      if (deleteError) {
+        setError(`Portfolio files were removed, but some portfolio entries could not be deleted: ${deleteError.message}`)
+        await refreshItems()
+        return
+      }
+      setItems([])
+      setGroupIds([])
+      setConfirmClearPortfolio(false)
+      setImportSummary('Portfolio cleared. You can upload new files whenever you’re ready.')
+    } catch (clearError) {
+      setError(`Could not clear the portfolio: ${clearError instanceof Error ? clearError.message : String(clearError)}`)
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function save(event) {
@@ -1711,11 +1778,19 @@ function PortfolioAdmin() {
   return <main className="studio-page">
     <StudioPageHeader kicker="PUBLIC PRESENCE / PORTFOLIO" title="Your work,<br />out in the world." action={<div className="portfolio-actions">
       {groupIds.length >= 2 && <button className="button button-soft" onClick={() => setGroupForm(true)}>Create project from {groupIds.length} drafts</button>}
+      <button className="button button-danger" disabled={!workspace || saving} onClick={() => setConfirmClearPortfolio(true)}><Trash2 size={15} /> Clear portfolio</button>
       <button className="button button-yellow" disabled={!workspace} onClick={() => { setStoryFiles([]); setCreating(true) }}><Plus size={16} /> Upload files</button>
       <button className="button button-soft" disabled={!workspace} onClick={() => setImporting(true)}><FolderKanban size={15} /> Import folder</button>
     </div>} />
     {error && <p className="notice-error">{error}</p>}
     {importSummary && <p className="notice-success">{importSummary}</p>}
+    {confirmClearPortfolio && <Modal title="Clear the entire portfolio?" onClose={() => { if (!saving) setConfirmClearPortfolio(false) }}>
+      <p>This permanently deletes every published and draft portfolio entry in this studio, its linked covers and uploaded files, and any unlinked portfolio uploads. It does not delete branding assets or images generated for the social calendar.</p>
+      <div className="portfolio-actions">
+        <button className="button button-soft" disabled={saving} onClick={() => setConfirmClearPortfolio(false)}>Cancel</button>
+        <button className="button button-danger" disabled={saving} onClick={clearPortfolio}>{saving ? 'Clearing portfolio…' : 'Delete all portfolio work'}</button>
+      </div>
+    </Modal>}
     {items === null ? <p className="loading-copy">Loading portfolio…</p> : items.length ? <>
       <p className="muted-copy">Upload files directly from this device, add project details, choose a segment, preview the work, then publish it when ready. Images, PDFs, and videos are supported.</p>
       <div className="record-list">{items.map((item) => <article className="record-row" key={item.id}>
@@ -1835,6 +1910,20 @@ function ContentCalendar() {
   const [campaignPlatforms, setCampaignPlatforms] = useState([])
   const [generating, setGenerating] = useState(false)
 
+  function openEditor(post = null, date = selectedDate) {
+    setError('')
+    setEditor(post
+      ? { ...post, planned_local: localDateTimeValue(post.planned_at), portfolio_asset_id: post.portfolio_asset_id || '' }
+      : { platform: platformFilter === 'all' ? 'instagram' : platformFilter, caption: '', alt_text: '', video_generation_prompt: '', content_type: 'educational_solution', planned_local: `${date}T09:00`, status: 'planned', portfolio_asset_id: '' })
+  }
+
+  const openCampaign = useCallback((date = selectedDate) => {
+    setError('')
+    setCampaignSetup({
+      planned_local: `${date}T09:00`,
+    })
+  }, [selectedDate])
+
   const refresh = useCallback(async () => {
     if (!supabase || !workspace?.id) return
     setLoading(true)
@@ -1898,20 +1987,6 @@ function ContentCalendar() {
     openCampaign(selectedDate)
     navigate('/studio/calendar', { replace: true })
   }, [location.search, navigate, openCampaign, selectedDate, workspace?.id])
-
-  function openEditor(post = null, date = selectedDate) {
-    setError('')
-    setEditor(post
-      ? { ...post, planned_local: localDateTimeValue(post.planned_at), portfolio_asset_id: post.portfolio_asset_id || '' }
-      : { platform: platformFilter === 'all' ? 'instagram' : platformFilter, caption: '', alt_text: '', video_generation_prompt: '', content_type: 'educational_solution', planned_local: `${date}T09:00`, status: 'planned', portfolio_asset_id: '' })
-  }
-
-  const openCampaign = useCallback((date = selectedDate) => {
-    setError('')
-    setCampaignSetup({
-      planned_local: `${date}T09:00`,
-    })
-  }, [selectedDate])
 
   async function generateCampaign(event) {
     event.preventDefault()
