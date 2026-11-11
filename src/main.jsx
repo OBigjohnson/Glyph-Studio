@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { ArrowDownRight, ArrowLeft, ArrowRight, CalendarDays, Check, ChevronLeft, ChevronRight, CircleUserRound, Copy, Download, ExternalLink, FileText, FolderKanban, ImagePlus, Link2, LockKeyhole, LogOut, Menu, MessageCircle, Palette, Plus, Search, Send, Settings2, Sparkles, Trash2, Users, X } from 'lucide-react'
+import { ArrowDownRight, ArrowLeft, ArrowRight, BookOpen, CalendarDays, Check, ChevronLeft, ChevronRight, CircleUserRound, Copy, Download, ExternalLink, FileText, FolderKanban, ImagePlus, Link2, LockKeyhole, LogOut, Mail, Menu, MessageCircle, Palette, Plus, Search, Send, Settings2, Sparkles, Trash2, Users, X } from 'lucide-react'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { ProtectedRoute } from './auth/ProtectedRoute'
 import { supabase, supabaseUrl, isSupabaseConfigured, supabaseConfigMessage } from './lib/supabase'
@@ -202,7 +202,7 @@ function SiteNav() {
     <Brand />
     <button className="mobile-toggle" aria-label="Toggle menu" onClick={() => setOpen(!open)}>{open ? <X /> : <Menu />}</button>
     <nav className={open ? 'nav-links nav-open' : 'nav-links'}>
-      <Link to="/portfolio">Selected work</Link><Link to="/#services">What we do</Link><Link to="/#studio">The studio</Link>
+      <Link to="/portfolio">Selected work</Link><Link to="/#services">What we do</Link><Link to="/#studio">The studio</Link><Link to="/blog">Notes</Link>
       <Link to="/studio" className="nav-login">Studio sign in</Link>
       <Link to="/contact" className="nav-cta">Start a project <ArrowRight size={15} /></Link>
     </nav>
@@ -211,7 +211,7 @@ function SiteNav() {
 
 function SiteFooter() {
   const { studio } = usePublicStudio()
-  return <footer className="site-footer"><div className="wrap footer-content"><Brand light /><p>{studio?.about_text || 'Good work, made with intention.'}</p><div className="footer-links"><Link to="/portfolio">Portfolio</Link><Link to="/contact">Contact</Link></div><small>© {new Date().getFullYear()} {studio?.studio_name || 'GLYPH Creative Studio'}</small></div></footer>
+  return <footer className="site-footer"><div className="wrap footer-content"><Brand light /><p>{studio?.about_text || 'Good work, made with intention.'}</p><div className="footer-links"><Link to="/portfolio">Portfolio</Link><Link to="/blog">Notes</Link><Link to="/contact">Contact</Link></div><NewsletterForm /><small>© {new Date().getFullYear()} {studio?.studio_name || 'GLYPH Creative Studio'}</small></div></footer>
 }
 
 function PublicHome() {
@@ -251,6 +251,184 @@ function PublicHome() {
       <section className="closing-cta"><div className="wrap cta-inner"><p className="kicker">HAVE A GOOD ONE IN MIND?</p><h2>Let’s make it<br /><em>real.</em></h2><Link className="button button-dark" to="/contact">Start a project <ArrowRight size={17} /></Link><div className="cta-star">✳</div></div></section>
     </main>
     <SiteFooter />
+  </div>
+}
+
+const blogCoverImages = [
+  {
+    url: 'https://images.unsplash.com/photo-1556761175-b413da4baf72?auto=format&fit=crop&w=1400&q=85',
+    label: 'A founder planning the next step for their business',
+  },
+  {
+    url: 'https://images.unsplash.com/photo-1521737711867-e3b97375f902?auto=format&fit=crop&w=1400&q=85',
+    label: 'A small business team working through an idea together',
+  },
+  {
+    url: 'https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=1400&q=85',
+    label: 'A bright, welcoming workspace for a growing business',
+  },
+]
+
+function blogCover(post, index) {
+  return post.cover_image_url || blogCoverImages[index % blogCoverImages.length].url
+}
+
+function NewsletterForm() {
+  const { studio } = usePublicStudio()
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+
+  async function subscribe(event) {
+    event.preventDefault()
+    const formElement = event.currentTarget
+    if (!supabase || !studio?.slug) {
+      setError(supabaseConfigMessage || 'The mailing list is not ready yet.')
+      return
+    }
+    const form = new FormData(event.currentTarget)
+    setBusy(true)
+    setError('')
+    setMessage('')
+    const { data, error: requestError } = await supabase.functions.invoke('newsletter', {
+      body: {
+        action: 'subscribe',
+        email: String(form.get('email') || ''),
+        website: String(form.get('website') || ''),
+        workspace_slug: studio.slug,
+      },
+    })
+    setBusy(false)
+    if (requestError || data?.error) {
+      setError(data?.error || requestError?.message || 'Could not submit your subscription.')
+      return
+    }
+    setMessage('Check your inbox for a confirmation link. Your subscription starts after you confirm.')
+    formElement.reset()
+  }
+
+  return <form className="footer-newsletter" onSubmit={subscribe}>
+    <div><b>Ideas for your next chapter.</b><span>Occasional, useful notes for making your brand easier to trust.</span></div>
+    <label className="newsletter-email"><span className="sr-only">Email address</span><input name="email" type="email" required maxLength="320" placeholder="Your email address" autoComplete="email" /></label>
+    <label className="newsletter-honeypot" aria-hidden="true"><span>Leave this field empty</span><input name="website" tabIndex="-1" autoComplete="off" /></label>
+    <button className="button button-dark" disabled={busy}>{busy ? 'Joining…' : 'Join the list'} <ArrowRight size={15} /></button>
+    {error && <span className="newsletter-feedback newsletter-error" role="alert">{error}</span>}
+    {message && <span className="newsletter-feedback" role="status">{message}</span>}
+    <small>Double opt-in. Unsubscribe any time.</small>
+  </form>
+}
+
+function NewsletterAction() {
+  const location = useLocation()
+  const [message, setMessage] = useState('Working on your newsletter link…')
+  const [error, setError] = useState('')
+  useEffect(() => {
+    let active = true
+    const action = location.pathname.endsWith('/confirm') ? 'confirm' : 'unsubscribe'
+    const token = new URLSearchParams(location.search).get('token')
+    if (!supabase || !token) {
+      setError('This newsletter link is incomplete or unavailable.')
+      return () => { active = false }
+    }
+    supabase.functions.invoke('newsletter', { body: { action, token } })
+      .then(({ data, error: requestError }) => {
+        if (!active) return
+        if (requestError || data?.error) {
+          setError(data?.error || requestError?.message || 'Could not update your subscription.')
+          return
+        }
+        setMessage(data?.message || 'Your newsletter preference has been updated.')
+      })
+    return () => { active = false }
+  }, [location.pathname, location.search])
+
+  return <div className="public-site marketing-site"><SiteNav /><main className="newsletter-action wrap">
+    <Mail size={28} /><p className="kicker">GLYPH / NEWSLETTER</p><h1>Your inbox,<br /><em>your choice.</em></h1>
+    {error ? <p className="newsletter-action-message" role="alert">{error}</p> : <p className="newsletter-action-message" role="status">{message}</p>}
+    <Link className="button button-yellow" to="/blog">Back to the blog <ArrowRight size={15} /></Link>
+  </main><SiteFooter /></div>
+}
+
+function renderBlogBody(body) {
+  return body.split(/\n\s*\n/).map((block, index) => {
+    const value = block.trim()
+    if (!value) return null
+    const heading = value.match(/^#{1,3}\s+(.+)$/)
+    if (heading) return <h2 key={index}>{heading[1]}</h2>
+    const lines = value.split('\n')
+    if (lines.every((line) => /^[-*]\s+/.test(line.trim()))) {
+      return <ul key={index}>{lines.map((line, itemIndex) => <li key={`${index}-${itemIndex}`}>{line.trim().replace(/^[-*]\s+/, '')}</li>)}</ul>
+    }
+    return <p key={index}>{value}</p>
+  })
+}
+
+function BlogPage() {
+  const { slug } = useParams()
+  const { studio, error: studioError } = usePublicStudio()
+  const [posts, setPosts] = useState(null)
+  const [error, setError] = useState('')
+  const article = slug ? posts?.[0] : null
+  useEffect(() => {
+    let active = true
+    if (!studio?.workspace_id) return () => { active = false }
+    if (!supabase) {
+      setPosts([])
+      setError(supabaseConfigMessage)
+      return () => { active = false }
+    }
+    let query = supabase.from('blog_posts')
+      .select('id, title, slug, excerpt, body, cover_image_url, seo_title, meta_description, keywords, published_at')
+      .eq('workspace_id', studio.workspace_id)
+      .eq('status', 'published')
+      .order('published_at', { ascending: false })
+    if (slug) query = query.eq('slug', slug)
+    query.then(({ data, error: queryError }) => {
+      if (!active) return
+      if (queryError) {
+        setError(queryError.message)
+        setPosts([])
+        return
+      }
+      setError('')
+      setPosts(data || [])
+    })
+    return () => { active = false }
+  }, [slug, studio?.workspace_id])
+
+  useEffect(() => {
+    const title = article ? `${article.seo_title || article.title} — GLYPH Studio` : 'Brand notes for businesses ready to be seen — GLYPH Studio'
+    const description = article?.meta_description || article?.excerpt || 'Clear, practical ideas to help your business look professional, earn trust, and get noticed.'
+    const previousTitle = document.title
+    const descriptionTag = document.querySelector('meta[name="description"]')
+    const previousDescription = descriptionTag?.getAttribute('content') || ''
+    document.title = title
+    descriptionTag?.setAttribute('content', description)
+    return () => {
+      document.title = previousTitle
+      descriptionTag?.setAttribute('content', previousDescription)
+    }
+  }, [article])
+
+  return <div className="public-site marketing-site blog-site"><SiteNav />
+    <main>
+      {slug ? <article className="blog-article wrap">
+        <Link className="blog-back" to="/blog"><ArrowLeft size={15} /> All notes</Link>
+        {error && <p className="notice-error">{error}</p>}
+        {!posts ? <p className="loading-copy">Loading this article…</p> : article ? <>
+          <header className="blog-article-heading"><p className="kicker">GLYPH / FIELD NOTES · {new Date(article.published_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}</p><h1>{article.title}</h1><p>{article.excerpt}</p></header>
+          <img className="blog-article-cover" src={blogCover(article, 0)} alt={`A customer building a business: ${article.title}`} />
+          <div className="blog-article-layout"><div className="blog-article-body">{renderBlogBody(article.body)}<p className="blog-article-cta">Your business deserves to be seen. <Link to="/contact">Book your free discovery call <ArrowRight size={15} /></Link></p></div><aside><span>THE GLYPH CLARITY PLAN</span><b>01 / Book a free discovery call</b><b>02 / Get a custom creative plan</b><b>03 / Create. Revise. Launch.</b><Link to="/contact">Let’s make your next step clear <ArrowRight size={15} /></Link></aside></div>
+        </> : <div className="blog-empty"><h1>This story is still taking shape.</h1><p>In the meantime, get practical notes for making your brand easier to trust.</p><Link className="button button-yellow" to="/blog">Explore the blog <ArrowRight size={15} /></Link></div>}
+      </article> : <section className="blog-index wrap">
+        <div className="blog-index-heading"><div><p className="kicker">GLYPH / FIELD NOTES</p><h1>Your good work<br /><em>deserves to be seen.</em></h1><p>Clear ideas for building a brand people notice, trust, and choose.</p></div><div className="blog-index-image"><img src={blogCoverImages[0].url} alt={blogCoverImages[0].label} /><span>THE CUSTOMER IS THE HERO</span></div></div>
+        {studioError && <p className="notice-error">{studioError}</p>}
+        {error && <p className="notice-error">{error}</p>}
+        <div className="blog-list-heading"><div><p className="kicker">PRACTICAL NOTES, FOR YOUR NEXT STEP</p><h2>Read, try, move forward.</h2></div><Link className="quiet-link" to="/contact">Need a guide? Let’s talk <ArrowRight size={15} /></Link></div>
+        {!posts ? <p className="loading-copy">Loading the latest notes…</p> : posts.length ? <div className="blog-card-grid">{posts.map((post, index) => <Link className="blog-card" key={post.id} to={`/blog/${post.slug}`}><img src={blogCover(post, index)} alt={`A business owner moving their idea forward: ${post.title}`} /><div><p className="kicker">{new Date(post.published_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}</p><h3>{post.title}</h3><p>{post.excerpt}</p><span>Read the note <ArrowRight size={14} /></span></div></Link>)}</div> : <div className="blog-empty"><BookOpen size={24} /><h3>Good ideas are on their way.</h3><p>We’re preparing practical, customer-first notes. Join the list and get the next one in your inbox.</p></div>}
+        <section className="blog-newsletter"><div><p className="kicker">A CLEARER NEXT STEP</p><h2>Useful ideas.<br /><em>No noise.</em></h2></div><NewsletterForm /></section>
+      </section>}
+    </main><SiteFooter />
   </div>
 }
 
@@ -586,7 +764,7 @@ function StudioShell() {
   }, [user?.id])
   const tabs = [
     ['/studio', 'Overview', Sparkles], ['/studio/search', 'Search', Search], ['/studio/clients', 'Clients', Users], ['/studio/projects', 'Projects', FolderKanban],
-    ['/studio/portfolio', 'Portfolio', Palette], ['/studio/calendar', 'Calendar', CalendarDays], ['/studio/requests', 'Requests', MessageCircle], ['/studio/finance', 'Invoices', FileText], ['/studio/settings', 'Settings', Settings2],
+    ['/studio/portfolio', 'Portfolio', Palette], ['/studio/calendar', 'Calendar', CalendarDays], ['/studio/editorial', 'Blog & email', BookOpen], ['/studio/requests', 'Requests', MessageCircle], ['/studio/finance', 'Invoices', FileText], ['/studio/settings', 'Settings', Settings2],
   ]
   const mobileTabs = [
     ['/studio', 'Studio', Sparkles],
@@ -600,6 +778,7 @@ function StudioShell() {
     ['/studio/search', 'Search your studio', Search],
     ['/studio/requests', 'Project requests', MessageCircle],
     ['/studio/portfolio', 'Portfolio', Palette],
+    ['/studio/editorial', 'Blog & email', BookOpen],
     ['/studio/settings', 'Settings', Settings2],
   ]
   const mobileTabActive = (path) => path === '/studio'
@@ -675,7 +854,7 @@ function StudioShell() {
             <div className="studio-topbar-actions"><Link to="/studio/search" aria-label="Search clients, projects, notes and tasks"><Search size={17} /><span>Search your studio…</span><kbd>⌘ K</kbd></Link>{!isMobileStudioApp && <Link className="studio-topbar-public" to="/"><ExternalLink size={15} /> View portfolio</Link>}</div>
           </header>
           {notificationError && <p className="notice-error">{notificationError}</p>}
-          <Routes><Route index element={<StudioOverview />} /><Route path="search" element={<StudioSearch />} /><Route path="requests" element={<ProjectRequests />} /><Route path="clients" element={<Clients />} /><Route path="clients/:id" element={<ClientDetail />} /><Route path="projects" element={<Projects />} /><Route path="projects/:id" element={<ProjectRoom />} /><Route path="portfolio" element={<PortfolioAdmin />} /><Route path="calendar" element={<ContentCalendar />} /><Route path="finance" element={<Finance />} /><Route path="settings" element={<StudioSettings />} /><Route path="*" element={<Navigate to="/studio" replace />} /></Routes>
+          <Routes><Route index element={<StudioOverview />} /><Route path="search" element={<StudioSearch />} /><Route path="requests" element={<ProjectRequests />} /><Route path="clients" element={<Clients />} /><Route path="clients/:id" element={<ClientDetail />} /><Route path="projects" element={<Projects />} /><Route path="projects/:id" element={<ProjectRoom />} /><Route path="portfolio" element={<PortfolioAdmin />} /><Route path="calendar" element={<ContentCalendar />} /><Route path="editorial" element={<StudioEditorial />} /><Route path="finance" element={<Finance />} /><Route path="settings" element={<StudioSettings />} /><Route path="*" element={<Navigate to="/studio" replace />} /></Routes>
         </section>
       </div>
     </UnreadProjectMessagesContext.Provider>
@@ -1886,6 +2065,268 @@ function platformName(platform) {
   return socialPlatforms.find((entry) => entry.id === platform)?.label || platform
 }
 
+function slugify(value) {
+  return value.toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 100)
+}
+
+function StudioEditorial() {
+  const { user, workspace } = useStudioWorkspace()
+  const [posts, setPosts] = useState(null)
+  const [subscribers, setSubscribers] = useState([])
+  const [campaigns, setCampaigns] = useState([])
+  const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
+  const [format, setFormat] = useState('blog')
+  const [emailType, setEmailType] = useState('nurture')
+  const [brief, setBrief] = useState({
+    topic: '',
+    audience: 'Business owners, founders, creators, coaches and personal brands who want to be taken seriously',
+    service: 'Branding',
+    goal: 'Teach a useful next step and invite readers to book a free discovery call',
+    extra_context: '',
+  })
+  const [generating, setGenerating] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [blogDraft, setBlogDraft] = useState(null)
+  const [emailDraft, setEmailDraft] = useState(null)
+
+  const refresh = useCallback(async () => {
+    if (!supabase || !workspace?.id) return
+    const [postResult, subscriberResult, campaignResult] = await Promise.all([
+      supabase.from('blog_posts')
+        .select('id, title, slug, excerpt, body, cover_image_url, seo_title, meta_description, keywords, storybrand_angle, alternate_hooks, visual_direction, status, published_at, updated_at')
+        .eq('workspace_id', workspace.id)
+        .order('updated_at', { ascending: false }),
+      supabase.from('newsletter_subscribers')
+        .select('id, email, confirmed_at, unsubscribed_at, created_at')
+        .eq('workspace_id', workspace.id)
+        .order('created_at', { ascending: false }),
+      supabase.from('newsletter_campaigns')
+        .select('id, subject, recipient_count, sent_at')
+        .eq('workspace_id', workspace.id)
+        .order('sent_at', { ascending: false })
+        .limit(10),
+    ])
+    const failed = [postResult, subscriberResult, campaignResult].find((result) => result.error)
+    if (failed?.error) {
+      setError(failed.error.message)
+      return
+    }
+    setPosts(postResult.data || [])
+    setSubscribers(subscriberResult.data || [])
+    setCampaigns(campaignResult.data || [])
+    setError('')
+  }, [workspace?.id])
+
+  useEffect(() => { refresh() }, [refresh])
+
+  async function generateDraft(event) {
+    event.preventDefault()
+    if (!supabase) return
+    setGenerating(true)
+    setError('')
+    setMessage('')
+    const request = {
+      format,
+      email_type: emailType,
+      ...brief,
+      cta_link: new URL(appPath('/contact'), window.location.origin).toString(),
+    }
+    const { data, error: requestError } = await supabase.functions.invoke('generate-storybrand-content', {
+      body: request,
+      timeout: 110_000,
+    })
+    setGenerating(false)
+    if (requestError || data?.error) {
+      setError(data?.error || requestError?.message || 'Could not generate the content draft.')
+      return
+    }
+    if (!data?.title || !data?.body || !Array.isArray(data.alternates)
+      || data.alternates.length !== 2 || !data.storybrand_angle) {
+      setError('The content service returned an incomplete StoryBrand draft. Please generate again.')
+      return
+    }
+    if (format === 'blog') {
+      setBlogDraft({
+        ...data,
+        id: null,
+        cover_image_url: blogCoverImages[0].url,
+        keywords_text: (data.keywords || []).join(', '),
+      })
+      setEmailDraft(null)
+    } else {
+      setEmailDraft(data)
+      setBlogDraft(null)
+    }
+    setMessage(format === 'blog'
+      ? 'Draft generated. Review the copy and image, then save it as a draft or publish when ready.'
+      : 'Email generated. Review the copy before sending it to confirmed subscribers.')
+  }
+
+  function editBlogDraft(field, value) {
+    setBlogDraft((current) => ({ ...current, [field]: value }))
+  }
+
+  async function saveBlog(status) {
+    if (!supabase || !workspace?.id || !user?.id || !blogDraft) return
+    const wordCount = blogDraft.body.trim().split(/\s+/).filter(Boolean).length
+    if (status === 'published' && (wordCount < 700 || wordCount > 1200)) {
+      setError(`Published blog posts must stay within the 700–1,200 word StoryBrand brief. This draft has ${wordCount} words.`)
+      return
+    }
+    const postSlug = slugify(blogDraft.title)
+    if (!postSlug) {
+      setError('Add a title that can be used to create a public link.')
+      return
+    }
+    setSaving(true)
+    setError('')
+    const payload = {
+      workspace_id: workspace.id,
+      created_by: blogDraft.created_by || user.id,
+      title: blogDraft.title.trim(),
+      slug: postSlug,
+      excerpt: blogDraft.excerpt.trim(),
+      body: blogDraft.body.trim(),
+      cover_image_url: blogDraft.cover_image_url,
+      seo_title: blogDraft.seo_title.trim(),
+      meta_description: blogDraft.meta_description.trim(),
+      keywords: blogDraft.keywords_text.split(',').map((keyword) => keyword.trim()).filter(Boolean).slice(0, 6),
+      storybrand_angle: blogDraft.storybrand_angle || {},
+      alternate_hooks: blogDraft.alternates || [],
+      visual_direction: blogDraft.visual_direction || '',
+      status,
+      published_at: status === 'published' ? blogDraft.published_at || new Date().toISOString() : null,
+    }
+    const result = blogDraft.id
+      ? await supabase.from('blog_posts').update(payload).eq('id', blogDraft.id).eq('workspace_id', workspace.id).select('id').single()
+      : await supabase.from('blog_posts').insert(payload).select('id').single()
+    setSaving(false)
+    if (result.error) {
+      setError(result.error.message)
+      return
+    }
+    setMessage(status === 'published' ? 'Blog post published on the public site.' : 'Blog draft saved for review.')
+    setBlogDraft(null)
+    await refresh()
+  }
+
+  async function editSavedPost(post) {
+    setBlogDraft({
+      ...post,
+      keywords_text: (post.keywords || []).join(', '),
+      alternates: post.alternate_hooks || [],
+    })
+    setEmailDraft(null)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  async function deleteBlogPost(post) {
+    if (!supabase || !window.confirm(`Delete “${post.title}”? This cannot be undone.`)) return
+    const { error: deleteError } = await supabase.from('blog_posts').delete()
+      .eq('id', post.id).eq('workspace_id', workspace.id)
+    if (deleteError) setError(deleteError.message)
+    else {
+      if (blogDraft?.id === post.id) setBlogDraft(null)
+      await refresh()
+    }
+  }
+
+  async function sendEmail() {
+    if (!supabase || !emailDraft) return
+    const confirmedCount = subscribers.filter((subscriber) => subscriber.confirmed_at && !subscriber.unsubscribed_at).length
+    if (!confirmedCount) {
+      setError('There are no confirmed subscribers yet. Add the newsletter signup to your site and wait for readers to confirm.')
+      return
+    }
+    if (!window.confirm(`Send “${emailDraft.title}” to ${confirmedCount} confirmed subscriber${confirmedCount === 1 ? '' : 's'}?`)) return
+    setSending(true)
+    setError('')
+    setMessage('')
+    const { data, error: sendError } = await supabase.functions.invoke('newsletter', {
+      body: {
+        action: 'send',
+        subject: emailDraft.title.trim(),
+        body: emailDraft.body.trim(),
+        preview_text: emailDraft.preview_text || '',
+        alternate_subjects: emailDraft.alternates || [],
+        storybrand_angle: emailDraft.storybrand_angle || {},
+      },
+      timeout: 110_000,
+    })
+    setSending(false)
+    if (sendError || data?.error) {
+      setError(data?.error || sendError?.message || 'Could not send this newsletter.')
+      return
+    }
+    setMessage(`Resend accepted the newsletter for ${data.recipient_count} confirmed subscribers. Check Resend for delivery or bounce status.`)
+    setEmailDraft(null)
+    await refresh()
+  }
+
+  const confirmedCount = subscribers.filter((subscriber) => subscriber.confirmed_at && !subscriber.unsubscribed_at).length
+  const draftWordCount = blogDraft?.body.trim().split(/\s+/).filter(Boolean).length || 0
+
+  return <main className="studio-page studio-editorial">
+    <StudioPageHeader kicker="YOUR STUDIO / STORYBRAND" title="Words that make<br />your customer the hero." action={<Link className="button button-outline" to="/blog">View the public blog <ExternalLink size={15} /></Link>} />
+    <p className="editorial-intro">Generate blog and email drafts from your BrandScript. Review before publishing or sending. Calendar captions use the same StoryBrand rules.</p>
+    {!isSupabaseConfigured && <p className="notice-error">{supabaseConfigMessage}</p>}
+    {error && <p className="notice-error">{error}</p>}
+    {message && <p className="notice-success">{message}</p>}
+    <section className="editorial-stats"><div><span>CONFIRMED SUBSCRIBERS</span><b>{confirmedCount}</b></div><div><span>BLOG POSTS</span><b>{posts?.length ?? '—'}</b></div><div><span>DOMAIN SENDER</span><b>hello@glyphstudio.cv</b></div></section>
+    <div className="editorial-layout">
+      <section className="editorial-compose">
+        <div className="studio-section-heading"><div><p className="kicker">CREATE A REVIEWABLE DRAFT</p><h2>Start with the customer.</h2></div></div>
+        <form className="editorial-brief" onSubmit={generateDraft}>
+          <label>Format<select value={format} onChange={(event) => { setFormat(event.target.value); setBlogDraft(null); setEmailDraft(null) }}><option value="blog">Blog post (700–1,200 words)</option><option value="email">Newsletter email</option></select></label>
+          {format === 'email' && <label>Email type<select value={emailType} onChange={(event) => setEmailType(event.target.value)}><option value="nurture">Nurture — value first</option><option value="offer">Offer — genuine invitation</option></select></label>}
+          <label>Topic or angle<input required maxLength="500" value={brief.topic} onChange={(event) => setBrief((current) => ({ ...current, topic: event.target.value }))} placeholder="Why inconsistent branding makes good businesses easy to overlook" /></label>
+          <label>Audience<input required maxLength="300" value={brief.audience} onChange={(event) => setBrief((current) => ({ ...current, audience: event.target.value }))} /></label>
+          <label>Service to feature<input maxLength="200" value={brief.service} onChange={(event) => setBrief((current) => ({ ...current, service: event.target.value }))} /></label>
+          <label>Goal<input required maxLength="300" value={brief.goal} onChange={(event) => setBrief((current) => ({ ...current, goal: event.target.value }))} /></label>
+          <label>Real extra context, offer, or deadline (optional)<textarea rows="3" maxLength="1000" value={brief.extra_context} onChange={(event) => setBrief((current) => ({ ...current, extra_context: event.target.value }))} placeholder="Only include verified facts. Leave blank if there is no real offer or deadline." /></label>
+          <p className="muted-copy">The CTA points to your contact page. No auto-publishing or auto-sending; you review every draft.</p>
+          <button className="button button-dark" disabled={generating || !isSupabaseConfigured}>{generating ? 'Writing with the BrandScript…' : 'Generate a draft'} <Sparkles size={15} /></button>
+        </form>
+      </section>
+      <section className="editorial-audience">
+        <div className="studio-section-heading"><div><p className="kicker">PERMISSION-BASED MAILING LIST</p><h2>Your readers choose.</h2></div></div>
+        <p>Signup is double opt-in. Only confirmed readers can receive an email, and every send includes an unsubscribe link.</p>
+        <div className="subscriber-count"><Mail size={18} /><b>{confirmedCount}</b><span>confirmed / {subscribers.filter((subscriber) => !subscriber.unsubscribed_at).length} active or awaiting confirmation</span></div>
+        {campaigns.length > 0 && <div className="editorial-history"><b>Recent sends</b>{campaigns.map((campaign) => <div key={campaign.id}><span>{campaign.subject}</span><small>{campaign.recipient_count} · {new Date(campaign.sent_at).toLocaleDateString()}</small></div>)}</div>}
+      </section>
+    </div>
+    {blogDraft && <section className="editorial-draft">
+      <div className="studio-section-heading"><div><p className="kicker">{blogDraft.id ? 'EDIT BLOG POST' : 'GENERATED BLOG DRAFT'}</p><h2>Review every detail.</h2></div><button className="icon-button" aria-label="Close blog draft" onClick={() => setBlogDraft(null)}><X size={17} /></button></div>
+      <div className="editorial-angle"><b>StoryBrand angle</b><span><strong>Hero + desire:</strong> {blogDraft.storybrand_angle?.hero_desire}</span><span><strong>Villain + internal problem:</strong> {blogDraft.storybrand_angle?.villain_internal_problem}</span><span><strong>Success vision:</strong> {blogDraft.storybrand_angle?.success_vision}</span></div>
+      <p className="editorial-alternates"><b>Alternate hooks:</b> {(blogDraft.alternates || []).join(' · ') || 'Generated hooks are shown when creating a new draft.'}</p>
+      <label>Title<input maxLength="180" value={blogDraft.title} onChange={(event) => editBlogDraft('title', event.target.value)} /></label>
+      <label>Excerpt<textarea rows="2" maxLength="400" value={blogDraft.excerpt} onChange={(event) => editBlogDraft('excerpt', event.target.value)} /></label>
+      <div className="editorial-cover-picker"><label>Customer-as-hero cover image<select value={blogDraft.cover_image_url} onChange={(event) => editBlogDraft('cover_image_url', event.target.value)}>{blogCoverImages.map((image) => <option value={image.url} key={image.url}>{image.label}</option>)}</select></label><img src={blogDraft.cover_image_url || blogCoverImages[0].url} alt="Preview of the selected customer-focused blog cover" /></div>
+      {blogDraft.visual_direction && <p className="muted-copy"><b>Visual direction:</b> {blogDraft.visual_direction}</p>}
+      <label>Article body · {draftWordCount} words<textarea className="editorial-body-input" rows="24" maxLength="30000" value={blogDraft.body} onChange={(event) => editBlogDraft('body', event.target.value)} /></label>
+      <div className="editorial-seo-fields"><label>SEO title<input maxLength="180" value={blogDraft.seo_title} onChange={(event) => editBlogDraft('seo_title', event.target.value)} /></label><label>Meta description · {blogDraft.meta_description?.length || 0}/155<input maxLength="155" value={blogDraft.meta_description} onChange={(event) => editBlogDraft('meta_description', event.target.value)} /></label><label>Suggested keywords<input value={blogDraft.keywords_text} onChange={(event) => editBlogDraft('keywords_text', event.target.value)} /></label></div>
+      <div className="editorial-draft-actions"><button className="button button-soft" disabled={saving} onClick={() => saveBlog('draft')}>{saving ? 'Saving…' : 'Save as draft'}</button><button className="button button-dark" disabled={saving || draftWordCount < 700 || draftWordCount > 1200} onClick={() => saveBlog('published')}>{saving ? 'Publishing…' : blogDraft.status === 'published' ? 'Update published post' : 'Publish post'} <ArrowRight size={15} /></button></div>
+    </section>}
+    {emailDraft && <section className="editorial-draft">
+      <div className="studio-section-heading"><div><p className="kicker">REVIEW BEFORE SENDING</p><h2>Your email draft.</h2></div><button className="icon-button" aria-label="Close email draft" onClick={() => setEmailDraft(null)}><X size={17} /></button></div>
+      <div className="editorial-angle"><b>StoryBrand angle</b><span><strong>Hero + desire:</strong> {emailDraft.storybrand_angle?.hero_desire}</span><span><strong>Villain + internal problem:</strong> {emailDraft.storybrand_angle?.villain_internal_problem}</span><span><strong>Success vision:</strong> {emailDraft.storybrand_angle?.success_vision}</span></div>
+      <label>Subject line<input maxLength="49" value={emailDraft.title} onChange={(event) => setEmailDraft((current) => ({ ...current, title: event.target.value }))} /></label>
+      <p className="editorial-alternates"><b>Alternate subject lines:</b> {emailDraft.alternates.join(' · ')}</p>
+      <label>Preview text<input maxLength="200" value={emailDraft.preview_text || ''} onChange={(event) => setEmailDraft((current) => ({ ...current, preview_text: event.target.value }))} /></label>
+      <label>Email body<textarea className="editorial-body-input" rows="12" maxLength="12000" value={emailDraft.body} onChange={(event) => setEmailDraft((current) => ({ ...current, body: event.target.value }))} /></label>
+      <p className="muted-copy">From hello@glyphstudio.cv. Send is enabled only after Resend and your sending domain are configured.</p>
+      <button className="button button-dark" disabled={sending || !confirmedCount || !emailDraft.title.trim() || emailDraft.title.trim().length >= 50} onClick={sendEmail}>{sending ? 'Sending…' : `Send to ${confirmedCount} confirmed subscribers`} <Send size={15} /></button>
+    </section>}
+    <section className="editorial-posts">
+      <div className="studio-section-heading"><div><p className="kicker">REVIEW BEFORE IT GOES LIVE</p><h2>Blog drafts and posts</h2></div><Link className="quiet-link" to="/blog">Public blog <ArrowRight size={15} /></Link></div>
+      {posts === null ? <p className="loading-copy">Loading editorial workspace…</p> : posts.length ? <div className="editorial-post-list">{posts.map((post) => <article key={post.id}><img src={blogCover(post, 0)} alt="" /><div><b>{post.title}</b><span>{post.status === 'published' ? `Published ${post.published_at ? new Date(post.published_at).toLocaleDateString() : ''}` : 'Draft for review'}</span><p>{post.excerpt}</p></div><button className="button button-soft" onClick={() => editSavedPost(post)}>Edit</button><button className="button button-danger" onClick={() => deleteBlogPost(post)} aria-label={`Delete ${post.title}`}><Trash2 size={15} /></button></article>)}</div> : <div className="studio-empty"><BookOpen /><h3>Your first story starts with the customer.</h3><p>Generate a draft above, review it, then publish when it is ready.</p></div>}
+    </section>
+  </main>
+}
+
 function ContentCalendar() {
   const { user, workspace } = useStudioWorkspace()
   const location = useLocation()
@@ -1914,7 +2355,7 @@ function ContentCalendar() {
     setError('')
     setEditor(post
       ? { ...post, planned_local: localDateTimeValue(post.planned_at), portfolio_asset_id: post.portfolio_asset_id || '' }
-      : { platform: platformFilter === 'all' ? 'instagram' : platformFilter, caption: '', alt_text: '', video_generation_prompt: '', content_type: 'educational_solution', planned_local: `${date}T09:00`, status: 'planned', portfolio_asset_id: '' })
+      : { platform: platformFilter === 'all' ? 'instagram' : platformFilter, caption: '', alt_text: '', video_generation_prompt: '', content_type: 'educational_solution', storybrand_angle: {}, alternate_hooks: [], visual_direction: '', planned_local: `${date}T09:00`, status: 'planned', portfolio_asset_id: '' })
   }
 
   const openCampaign = useCallback((date = selectedDate) => {
@@ -1930,7 +2371,7 @@ function ContentCalendar() {
     setError('')
     const [postResult, assetResult, workResult] = await Promise.all([
       supabase.from('social_content_posts')
-        .select('id, platform, caption, alt_text, content_type, video_generation_prompt, image_generation_prompt, generated_image_path, planned_at, status, portfolio_asset_id, portfolio_item_id, copied_at, copy_count, used_at, published_at, created_at, updated_at')
+        .select('id, platform, caption, alt_text, content_type, video_generation_prompt, image_generation_prompt, generated_image_path, storybrand_angle, alternate_hooks, visual_direction, planned_at, status, portfolio_asset_id, portfolio_item_id, copied_at, copy_count, used_at, published_at, created_at, updated_at')
         .eq('workspace_id', workspace.id)
         .order('planned_at', { ascending: true, nullsFirst: false }),
       supabase.from('portfolio_assets')
@@ -2038,8 +2479,12 @@ function ContentCalendar() {
       || (contentType === 'educational_solution' && selectedWork)
       || !Array.isArray(data.drafts)
       || data.drafts.length !== campaignPlatforms.length
+      || !data.storybrand_angle
+      || typeof data.visual_direction !== 'string'
       || data.drafts.some((draft) => !campaignPlatforms.includes(draft.platform)
         || typeof draft.caption !== 'string'
+        || !Array.isArray(draft.alternate_hooks)
+        || draft.alternate_hooks.length !== 2
         || (['instagram', 'tiktok', 'youtube'].includes(draft.platform)
           && typeof draft.video_prompt !== 'string'))) {
       setError('The content service returned an incomplete or incompatible response. Please generate again. If it continues, reload the page to update the studio.')
@@ -2072,6 +2517,8 @@ function ContentCalendar() {
       plannedAt,
       angle: data.angle,
       rationale: data.rationale,
+      storybrandAngle: data.storybrand_angle,
+      visualDirection: data.visual_direction,
       drafts: data.drafts,
     })
     setCampaignSetup(null)
@@ -2109,6 +2556,9 @@ function ContentCalendar() {
       video_generation_prompt: draft.video_prompt.trim(),
       image_generation_prompt: campaignDrafts.imageGenerationPrompt,
       generated_image_path: campaignDrafts.generatedImage?.path || null,
+      storybrand_angle: campaignDrafts.storybrandAngle,
+      alternate_hooks: draft.alternate_hooks,
+      visual_direction: campaignDrafts.visualDirection,
       planned_at: campaignDrafts.plannedAt,
       status: campaignDrafts.plannedAt ? 'planned' : 'draft',
       portfolio_item_id: campaignDrafts.work?.id || null,
@@ -2159,6 +2609,9 @@ function ContentCalendar() {
       portfolio_asset_id: String(form.get('portfolio_asset_id') || '') || null,
       portfolio_item_id: assets.find((asset) => asset.id === String(form.get('portfolio_asset_id') || ''))?.portfolio_item_id || editor.portfolio_item_id || null,
       generated_image_path: editor.generated_image_path || null,
+      storybrand_angle: editor.storybrand_angle || {},
+      alternate_hooks: editor.alternate_hooks || [],
+      visual_direction: editor.visual_direction || '',
       updated_at: new Date().toISOString(),
     }
     const result = editor.id
@@ -2383,11 +2836,11 @@ function ContentCalendar() {
     {campaignDrafts && <Modal title="Review campaign drafts" onClose={() => { if (!saving) void discardCampaignDrafts() }}><div className="campaign-review">
       <div className="campaign-review-work">{(campaignDrafts.generatedImage?.url || campaignDrafts.asset?.url) && <img src={campaignDrafts.generatedImage?.url || campaignDrafts.asset?.url} alt={campaignDrafts.generatedImage ? 'Generated educational post preview' : ''} />}<div><b>{campaignDrafts.contentType === 'educational_solution' ? 'Educational solution' : campaignDrafts.work.title}</b><span>{campaignDrafts.contentType === 'educational_solution' ? 'Practical, audience-first content with generated artwork' : `${campaignDrafts.work.segment || campaignDrafts.work.service || 'Portfolio work'} · `}{campaignDrafts.plannedAt ? new Date(campaignDrafts.plannedAt).toLocaleString() : 'No date'}</span></div></div>
       {campaignDrafts.generatedImage?.url && <img className="campaign-generated-image-preview" src={campaignDrafts.generatedImage.url} alt="Full preview of generated social post artwork" />}
-      <section className="campaign-angle"><b>Content angle</b><p>{campaignDrafts.angle}</p><small>{campaignDrafts.rationale}</small></section>
+      <section className="campaign-angle"><b>Content angle</b><p>{campaignDrafts.angle}</p><small>{campaignDrafts.rationale}</small><div className="editorial-angle"><span><strong>Hero + desire:</strong> {campaignDrafts.storybrandAngle.hero_desire}</span><span><strong>Villain + internal problem:</strong> {campaignDrafts.storybrandAngle.villain_internal_problem}</span><span><strong>Success vision:</strong> {campaignDrafts.storybrandAngle.success_vision}</span><span><strong>Visual idea:</strong> {campaignDrafts.visualDirection}</span></div></section>
       <p className="muted-copy">Review and edit every draft before saving. GLYPH does not post or schedule externally.</p>
       {campaignDrafts.generatedImageError && <p className="campaign-image-warning">{campaignDrafts.generatedImageError} You can still save the captions and generate the image later from the saved prompt.</p>}
       {!campaignDrafts.generatedImage?.url && campaignDrafts.imageGenerationPrompt && <div className="campaign-image-prompt"><label htmlFor="campaign-image-prompt">Image generation prompt</label><textarea id="campaign-image-prompt" rows="5" maxLength="5000" value={campaignDrafts.imageGenerationPrompt} onChange={(event) => setCampaignDrafts((current) => ({ ...current, imageGenerationPrompt: event.target.value }))} /><button className="button button-soft" type="button" onClick={() => copyImageGenerationPrompt(campaignDrafts.imageGenerationPrompt, 'campaign')}>{copiedImagePromptId === 'campaign' ? 'Copied' : 'Copy image prompt'}</button><small>Save the captions now, then use this prompt in an image-generation tool when available.</small></div>}
-      {campaignDrafts.drafts.map((draft) => <section className="campaign-draft" key={draft.platform}><header><b>{platformName(draft.platform)}</b></header><label htmlFor={`campaign-caption-${draft.platform}`}>{platformName(draft.platform)} caption</label><textarea id={`campaign-caption-${draft.platform}`} rows={draft.platform === 'x' ? 4 : 6} maxLength={socialPlatforms.find((platform) => platform.id === draft.platform)?.limit || 5000} value={draft.caption} onChange={(event) => editCampaignCaption(draft.platform, event.target.value)} /><small className="campaign-character-count">{draft.caption.length} / {socialPlatforms.find((platform) => platform.id === draft.platform)?.limit || 5000} characters</small><label htmlFor={`campaign-alt-${draft.platform}`}>Optional image description (Gemini does not see images)</label><textarea id={`campaign-alt-${draft.platform}`} rows="2" maxLength="1000" value={draft.alt_text} onChange={(event) => setCampaignDrafts((current) => ({ ...current, drafts: current.drafts.map((entry) => entry.platform === draft.platform ? { ...entry, alt_text: event.target.value } : entry) }))} />{draft.video_prompt && <div className="campaign-video-prompt"><label htmlFor={`campaign-video-${draft.platform}`}>Google Flow video-generation prompt</label><textarea id={`campaign-video-${draft.platform}`} rows="6" maxLength="3000" value={draft.video_prompt} onChange={(event) => editCampaignVideoPrompt(draft.platform, event.target.value)} /><button className="button button-soft" type="button" onClick={() => copyVideoPromptText(draft.video_prompt, draft.platform)}><Copy size={14} /> {copiedVideoId === draft.platform ? 'Copied' : 'Copy Flow prompt'}</button><small>Paste this into Google Flow. For a portfolio story, add the project design as a reference image.</small></div>}</section>)}
+      {campaignDrafts.drafts.map((draft) => <section className="campaign-draft" key={draft.platform}><header><b>{platformName(draft.platform)}</b></header><label htmlFor={`campaign-caption-${draft.platform}`}>{platformName(draft.platform)} caption</label><textarea id={`campaign-caption-${draft.platform}`} rows={draft.platform === 'x' ? 4 : 6} maxLength={socialPlatforms.find((platform) => platform.id === draft.platform)?.limit || 5000} value={draft.caption} onChange={(event) => editCampaignCaption(draft.platform, event.target.value)} /><small className="campaign-character-count">{draft.caption.length} / {socialPlatforms.find((platform) => platform.id === draft.platform)?.limit || 5000} characters</small><div className="editorial-angle"><b>Two alternate hooks</b>{draft.alternate_hooks.map((hook) => <span key={hook}>{hook}</span>)}</div><label htmlFor={`campaign-alt-${draft.platform}`}>Optional image description (Gemini does not see images)</label><textarea id={`campaign-alt-${draft.platform}`} rows="2" maxLength="1000" value={draft.alt_text} onChange={(event) => setCampaignDrafts((current) => ({ ...current, drafts: current.drafts.map((entry) => entry.platform === draft.platform ? { ...entry, alt_text: event.target.value } : entry) }))} />{draft.video_prompt && <div className="campaign-video-prompt"><label htmlFor={`campaign-video-${draft.platform}`}>Google Flow video-generation prompt</label><textarea id={`campaign-video-${draft.platform}`} rows="6" maxLength="3000" value={draft.video_prompt} onChange={(event) => editCampaignVideoPrompt(draft.platform, event.target.value)} /><button className="button button-soft" type="button" onClick={() => copyVideoPromptText(draft.video_prompt, draft.platform)}><Copy size={14} /> {copiedVideoId === draft.platform ? 'Copied' : 'Copy Flow prompt'}</button><small>Paste this into Google Flow. For a portfolio story, add the project design as a reference image.</small></div>}</section>)}
       <div className="campaign-review-actions"><button className="button button-soft" type="button" onClick={() => { void discardCampaignDrafts(); openCampaign(selectedDate) }}>Generate again</button><button className="button button-dark" type="button" disabled={saving || campaignDrafts.drafts.some((draft) => !draft.caption.trim() || draft.caption.length > (socialPlatforms.find((platform) => platform.id === draft.platform)?.limit || 5000) || (['instagram', 'tiktok', 'youtube'].includes(draft.platform) && !draft.video_prompt.trim()))} onClick={saveCampaign}>{saving ? 'Saving…' : `Save ${campaignDrafts.drafts.length} drafts`} <Check size={15} /></button></div>
     </div></Modal>}
   </main>
@@ -2400,7 +2853,7 @@ function CalendarPost({ post, assets, copied, copiedAlt, copiedVideo, copiedImag
   const time = post.planned_at ? new Date(post.planned_at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : ''
   return <article className="calendar-post">
     {imageUrl ? <img src={imageUrl} alt={post.generated_image_url ? 'Generated post artwork' : ''} /> : <span className="calendar-post-no-image"><ImagePlus /></span>}
-    <div className="calendar-post-body"><header><b>{platformName(post.platform)}</b>{time && <time>{time}</time>}</header><p>{post.caption}</p><div className="calendar-history"><span>{post.content_type === 'educational_solution' ? 'Educational solution' : 'Portfolio story'}</span>{post.copy_count > 0 && <span>Copied {post.copy_count}×</span>}{post.used_at && <span>Used</span>}{post.published_at && <span>Published</span>}</div><label className="calendar-status">Status<select aria-label={`${platformName(post.platform)} post status`} value={post.status} onChange={(event) => onStatus(event.target.value)}>{postStatuses.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label><div className="calendar-post-actions">
+    <div className="calendar-post-body"><header><b>{platformName(post.platform)}</b>{time && <time>{time}</time>}</header><p>{post.caption}</p>{(post.alternate_hooks?.length || post.visual_direction) && <details className="calendar-storybrand"><summary>StoryBrand notes</summary>{post.alternate_hooks?.length > 0 && <p><b>Alternate hooks:</b> {post.alternate_hooks.join(' · ')}</p>}{post.storybrand_angle?.hero_desire && <p><b>Hero + desire:</b> {post.storybrand_angle.hero_desire}</p>}{post.storybrand_angle?.villain_internal_problem && <p><b>Problem:</b> {post.storybrand_angle.villain_internal_problem}</p>}{post.storybrand_angle?.success_vision && <p><b>Success:</b> {post.storybrand_angle.success_vision}</p>}{post.visual_direction && <p><b>Visual idea:</b> {post.visual_direction}</p>}</details>}<div className="calendar-history"><span>{post.content_type === 'educational_solution' ? 'Educational solution' : 'Portfolio story'}</span>{post.copy_count > 0 && <span>Copied {post.copy_count}×</span>}{post.used_at && <span>Used</span>}{post.published_at && <span>Published</span>}</div><label className="calendar-status">Status<select aria-label={`${platformName(post.platform)} post status`} value={post.status} onChange={(event) => onStatus(event.target.value)}>{postStatuses.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label><div className="calendar-post-actions">
       <button className="button button-soft" onClick={onCopy}><Copy size={14} /> {copied ? 'Copied' : 'Copy caption'}</button>
       {post.alt_text && <button className="button button-soft" onClick={onCopyAlt}><Copy size={14} /> {copiedAlt ? 'Alt copied' : 'Copy alt text'}</button>}
       {post.video_generation_prompt && <button className="button button-soft" onClick={onCopyVideo}><Copy size={14} /> {copiedVideo ? 'Copied' : 'Copy Flow prompt'}</button>}
@@ -3653,6 +4106,10 @@ function App() {
     <Route path="/" element={<PublicHome />} />
     <Route path="/portfolio" element={<Portfolio />} />
     <Route path="/portfolio/:slug" element={<PortfolioDetail />} />
+    <Route path="/blog" element={<BlogPage />} />
+    <Route path="/blog/:slug" element={<BlogPage />} />
+    <Route path="/newsletter/confirm" element={<NewsletterAction />} />
+    <Route path="/newsletter/unsubscribe" element={<NewsletterAction />} />
     <Route path="/contact" element={<Contact />} />
     <Route path="/sign-in" element={<AuthPage />} />
     <Route path="/create-account" element={<AuthPage signup />} />

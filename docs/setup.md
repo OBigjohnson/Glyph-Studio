@@ -92,6 +92,86 @@ should be fact-checked before publishing. See
 [`integrations.md`](./integrations.md#gemini-social-content) for data flow and
 the feature's limits.
 
+## StoryBrand blog and newsletter
+
+The public blog, private editorial workspace, daily draft generator,
+double-opt-in mailing list, and Resend newsletter sender use the
+`20261111100000_storybrand_blog_newsletter.sql` migration and the
+`generate-storybrand-content`, `generate-daily-blog`, and `newsletter` Edge
+Functions. The same shared BrandScript rules also guide social-calendar drafts.
+
+1. Apply migrations and deploy the functions:
+
+   ```bash
+   supabase db push
+   supabase functions deploy generate-storybrand-content
+   supabase functions deploy generate-daily-blog
+   supabase functions deploy newsletter
+   ```
+
+2. In Resend, add and verify the `glyphstudio.cv` sending domain. Publish the
+   exact SPF, DKIM, and DMARC DNS records Resend provides at your domain's DNS
+   host. Do not send live campaigns until Resend shows the domain as verified.
+
+3. Configure the secrets in the linked Supabase project. Set `PUBLIC_APP_URL`
+   to the actual HTTPS URL of the deployed GLYPH site:
+
+   ```bash
+   supabase secrets set RESEND_API_KEY=re_your_resend_key "NEWSLETTER_FROM=GLYPH Studio <hello@glyphstudio.cv>" PUBLIC_APP_URL=https://your-site.example
+   ```
+
+   The editorial generator also requires the `GEMINI_API_KEY` and optional
+   `GEMINI_MODEL` secrets from the Gemini social-content setup above. These are
+   server-only secrets; never add them to `.env.local`, a `VITE_*` variable, or
+   source control.
+
+   Set a separate random secret for the scheduled daily job:
+
+   ```bash
+   supabase secrets set DAILY_BLOG_SECRET=replace_with_a_long_random_secret
+   ```
+
+4. To schedule one reviewed blog draft per day, enable the `pg_cron`, `pg_net`,
+   and `supabase_vault` extensions in the Supabase Dashboard. In the SQL
+   Editor, store the same random job secret in Vault and schedule a daily
+   08:00 UTC invocation (replace the project URL):
+
+   ```sql
+   select vault.create_secret('replace_with_a_long_random_secret', 'daily_blog_secret');
+
+   select cron.schedule(
+     'generate-daily-blog',
+     '0 8 * * *',
+     $job$
+       select net.http_post(
+         url := 'https://<project-ref>.supabase.co/functions/v1/generate-daily-blog',
+         headers := jsonb_build_object(
+           'Content-Type', 'application/json',
+           'x-job-secret', (select decrypted_secret from vault.decrypted_secrets where name = 'daily_blog_secret')
+         ),
+         body := '{}'::jsonb
+       );
+     $job$
+   );
+   ```
+
+   Daily articles are saved as drafts and are never published automatically.
+   A unique workspace/date check prevents duplicate drafts on retries. Review
+   daily runs and generated drafts in Studio before publishing.
+
+5. Open `/studio/editorial` to generate and review drafts. Published blog
+   articles appear at `/blog`. Email signup requires readers to confirm their
+   address. Only confirmed subscribers can be sent a campaign; sends are manual
+   and currently limited to 100 subscribers per campaign.
+
+6. Test signup and confirmation using an address you control, then test a
+   campaign with that confirmed address before sending to a larger list.
+   Resend acceptance means the provider accepted the message, not that it
+   reached the inbox; check Resend for delivery and bounce status.
+
+See [`integrations.md`](./integrations.md#storybrand-blog-and-newsletter) for
+the privacy and delivery behavior.
+
 ## Deploying the combined app with Vercel
 
 The public portfolio, client portal, and studio workspace deploy together as
@@ -235,8 +315,8 @@ payment has issued one.
 
 Bachs checkout, signed webhook verification, and receipt issuance are
 implemented, but require the migration, Edge Function secrets, and webhook
-destination above. Social OAuth and scheduling, outbound email, community
-features, and AI responses are not implemented. See `payments.md` and
+destination above. Social OAuth and scheduling, community features, and a
+public AI inquiry assistant are not implemented. See `payments.md` and
 `integrations.md` for the server-side boundaries. See `portfolio.md` to import
 and publish your artwork and `costs.md` for the current free/low-cost provider
 limits, known prices, and account setup checklist.

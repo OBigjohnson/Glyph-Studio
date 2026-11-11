@@ -11,3 +11,12 @@ verify_jwt = false
 
 [functions.generate-social-content]
 verify_jwt = true
+
+[functions.generate-storybrand-content]
+verify_jwt = false
+
+[functions.newsletter]
+verify_jwt = false
+
+[functions.generate-daily-blog]
+verify_jwt = false

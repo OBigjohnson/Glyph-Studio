@@ -64,13 +64,39 @@ generation may incur Google API charges and remain subject to your Google AI
 plan, rate limits, and Supabase project limits. Never put the Gemini key in a
 `VITE_*` variable, the mobile app, or source control.
 
-## Future email, community, and assistant
+## StoryBrand blog and newsletter
 
-Custom outbound email requires a verified sending domain, server-side provider
-credentials, bounce handling, and user consent. A community needs its own
-moderation and access model. An offline inquiry assistant must be constrained
-to studio-approved service/pricing information and hand off uncertain or
-custom requests; none of these services is currently enabled.
+The public `/blog` page lists only published posts. The private Studio
+**Blog & email** workspace generates StoryBrand-guided blog and newsletter
+drafts from the shared Glyph BrandScript. A Supabase Cron job can generate one
+additional 700-1,200 word blog draft per day using the `generate-daily-blog`
+function; its migration and scheduling setup are documented in `setup.md`.
+Blog articles are checked against
+the 700-1,200 word brief and include SEO fields, two alternate hooks, an SB7
+angle, and a customer-as-hero visual direction. Review and publish posts
+manually; daily generation never publishes automatically. The blog uses
+curated Unsplash photographs as customer-focused cover images, which can be
+selected for each post.
+
+The public mailing-list form uses double opt-in. Only confirmed subscribers
+receive campaigns, and each message includes an unsubscribe link. Sending uses
+Resend from `hello@glyphstudio.cv`; Resend must verify `glyphstudio.cv` and its
+DNS records before mail can be delivered. The sender and provider credentials
+stay in Supabase Function secrets. Studio sends are manual, require
+confirmation, and are limited to 100 recipients per campaign in this first
+version. Resend acceptance is recorded separately from final delivery/bounce
+status.
+
+Apply the migration and deploy both Edge Functions as described in
+[`setup.md`](./setup.md#storybrand-blog-and-newsletter). Configure
+`RESEND_API_KEY`, `NEWSLETTER_FROM`, and `PUBLIC_APP_URL` before using signup
+confirmation or sending. The Gemini `GEMINI_API_KEY` is also required for
+editorial drafts. No API key, domain secret, or sending credential belongs in
+the frontend or a `VITE_*` variable.
+
+A community needs its own moderation and access model. An inquiry assistant
+must be constrained to studio-approved service/pricing information and hand
+off uncertain or custom requests; neither is enabled.
 
 Google Drive is supported as a manually attached project/deliverable URL; no
 Drive API integration is required for the current workflow.
