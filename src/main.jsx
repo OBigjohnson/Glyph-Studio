@@ -204,7 +204,7 @@ function SiteNav() {
     <button className="mobile-toggle" aria-label="Toggle menu" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? <X /> : <Menu />}{open ? 'Close' : 'Menu'}</button>
     <nav className={open ? 'nav-links nav-open' : 'nav-links'}>
       <Link to="/portfolio">Selected work</Link><Link to="/#services">What we do</Link><Link to="/#studio">The studio</Link><Link to="/blog">Notes</Link>
-      <Link to="/sign-in?returnTo=%2Fportal" className="nav-login">Client sign in</Link>
+      <Link to="/sign-in?returnTo=%2Fstudio" className="nav-login">Studio sign in</Link>
       <Link to="/contact" className="nav-cta">Start a project <ArrowRight size={15} /></Link>
     </nav>
   </header>
@@ -212,7 +212,7 @@ function SiteNav() {
 
 function SiteFooter() {
   const { studio } = usePublicStudio()
-  return <footer className="site-footer"><div className="wrap footer-content"><Brand light /><p>{studio?.about_text || 'Good work, made with intention.'}<br />{studio?.location || 'Lagos & everywhere.'}</p><div className="footer-explore"><span>EXPLORE</span><Link to="/portfolio">Selected work</Link><Link to="/#services">What we do</Link><Link to="/#studio">The studio</Link><Link to="/blog">Studio notes</Link></div><div className="footer-contact"><span>LET’S TALK</span><a href="mailto:specificvisuals09@gmail.com">specificvisuals09@gmail.com</a><Link to="/contact">Start a project <ArrowRight size={13} /></Link><Link to="/sign-in?returnTo=%2Fportal">Client sign in <ArrowRight size={13} /></Link></div><small>© {new Date().getFullYear()} {studio?.studio_name || 'GLYPH Creative Studio'} <span>INDEPENDENT IN SPIRIT. INTENTIONAL BY DESIGN.</span></small></div></footer>
+  return <footer className="site-footer"><div className="wrap footer-content"><Brand light /><p>{studio?.about_text || 'Good work, made with intention.'}<br />{studio?.location || 'Lagos & everywhere.'}</p><div className="footer-explore"><span>EXPLORE</span><Link to="/portfolio">Selected work</Link><Link to="/#services">What we do</Link><Link to="/#studio">The studio</Link><Link to="/blog">Studio notes</Link></div><div className="footer-contact"><span>LET’S TALK</span><a href="mailto:specificvisuals09@gmail.com">specificvisuals09@gmail.com</a><Link to="/contact">Start a project <ArrowRight size={13} /></Link><Link to="/sign-in?returnTo=%2Fstudio">Studio sign in <ArrowRight size={13} /></Link><Link to="/sign-in?returnTo=%2Fportal">Client sign in <ArrowRight size={13} /></Link></div><small>© {new Date().getFullYear()} {studio?.studio_name || 'GLYPH Creative Studio'} <span>INDEPENDENT IN SPIRIT. INTENTIONAL BY DESIGN.</span></small></div></footer>
 }
 
 function PublicHome() {
@@ -1125,7 +1125,7 @@ function StudioShell() {
 }
 
 function StudioAccessRoute() {
-  const { user } = useAuth()
+  const { user, signOut } = useAuth()
   const [authorized, setAuthorized] = useState(null)
   const [error, setError] = useState('')
   useEffect(() => {
@@ -1146,16 +1146,13 @@ function StudioAccessRoute() {
           setAuthorized(false)
           return
         }
-        setAuthorized(
-          user.email?.toLowerCase() === studioOwnerEmail
-          && (data || []).some((membership) => membership.role === 'owner'),
-        )
+        setAuthorized((data || []).some((membership) => membership.role === 'owner'))
       })
     return () => { active = false }
   }, [user?.email, user?.id])
   if (authorized === null) return <main className="auth-loading"><span className="eyebrow">Checking studio access</span><h1>One moment…</h1></main>
   if (error) return <main className="auth-loading"><p className="notice-error">Could not verify studio access: {error}</p><Link className="quiet-link" to="/portal">Continue to the client portal</Link></main>
-  if (!authorized) return <Navigate to="/portal" replace />
+  if (!authorized) return <main className="auth-loading studio-access-denied"><span className="eyebrow">Studio access</span><h1>This account doesn’t have studio access.</h1><p>Signed in as {user?.email || 'an unknown account'}. Switch to the studio owner account to continue.</p><button className="button button-dark" onClick={signOut}>Sign out and switch account</button><Link className="quiet-link" to="/portal">Open the client portal</Link></main>
   return <StudioShell />
 }
 

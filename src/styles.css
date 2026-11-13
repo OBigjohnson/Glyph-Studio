@@ -2754,6 +2754,11 @@ body:has(.client-portal) { background: #06080c; }
 .marketing-site .form-success h2 { color: #f1f3f7; font-weight: 450; }
 .marketing-site .form-success p { color: #9ca4b3; }
 .marketing-site .auth-page { display: grid; grid-template-columns: minmax(0,1fr) minmax(370px,.84fr); gap: 8%; align-items: center; padding-block: 55px 85px; }
+.studio-access-denied { display: grid; min-height: 100vh; align-content: center; justify-items: center; gap: 16px; padding: 32px; background: #06080c; color: #f1f3f7; text-align: center; }
+.studio-access-denied .eyebrow { color: #91adff; font: 9px var(--mono); letter-spacing: .12em; text-transform: uppercase; }
+.studio-access-denied h1 { max-width: 620px; margin: 0; font: 400 clamp(32px,5vw,52px)/1.08 var(--display); }
+.studio-access-denied p { max-width: 520px; margin: 0; color: #9ca4b3; font-size: 13px; line-height: 1.7; }
+.studio-access-denied .quiet-link { color: #c0c6d2; }
 .marketing-site .auth-intro { min-width: 0; }
 .marketing-site .auth-intro > .kicker { margin-bottom: 32px; line-height: 1.5; }
 .marketing-site .auth-intro h1 { margin: 0; color: #f1f3f7; font-size: clamp(48px,7vw,84px); font-weight: 400; line-height: 1.04; letter-spacing: -.06em; }
