@@ -273,6 +273,20 @@ function blogCover(post, index) {
   return post.cover_image_url || blogCoverImages[index % blogCoverImages.length].url
 }
 
+function getBlogCoverPath(url, workspaceId) {
+  if (!supabaseUrl || !url) return ''
+  try {
+    const imageUrl = new URL(url)
+    const storageUrl = new URL(supabaseUrl)
+    const prefix = '/storage/v1/object/public/blog-covers/'
+    if (imageUrl.origin !== storageUrl.origin || !imageUrl.pathname.startsWith(prefix)) return ''
+    const path = decodeURIComponent(imageUrl.pathname.slice(prefix.length))
+    return path.startsWith(`${workspaceId}/`) ? path : ''
+  } catch {
+    return ''
+  }
+}
+
 function NewsletterForm() {
   const { studio } = usePublicStudio()
   const [busy, setBusy] = useState(false)
@@ -369,6 +383,7 @@ function BlogPage() {
   const [posts, setPosts] = useState(null)
   const [error, setError] = useState('')
   const article = slug ? posts?.[0] : null
+  const featuredPost = posts?.[0] || null
   useEffect(() => {
     let active = true
     if (!studio?.workspace_id) return () => { active = false }
@@ -412,20 +427,28 @@ function BlogPage() {
 
   return <div className="public-site marketing-site blog-site"><SiteNav />
     <main>
-      {slug ? <article className="blog-article wrap">
-        <Link className="blog-back" to="/blog"><ArrowLeft size={15} /> All notes</Link>
-        {error && <p className="notice-error">{error}</p>}
-        {!posts ? <p className="loading-copy">Loading this article…</p> : article ? <>
-          <header className="blog-article-heading"><p className="kicker">GLYPH / FIELD NOTES · {new Date(article.published_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}</p><h1>{article.title}</h1><p>{article.excerpt}</p></header>
-          <img className="blog-article-cover" src={blogCover(article, 0)} alt={`A customer building a business: ${article.title}`} />
-          <div className="blog-article-layout"><div className="blog-article-body">{renderBlogBody(article.body)}<p className="blog-article-cta">Your business deserves to be seen. <Link to="/contact">Book your free discovery call <ArrowRight size={15} /></Link></p></div><aside><span>THE GLYPH CLARITY PLAN</span><b>01 / Book a free discovery call</b><b>02 / Get a custom creative plan</b><b>03 / Create. Revise. Launch.</b><Link to="/contact">Let’s make your next step clear <ArrowRight size={15} /></Link></aside></div>
-        </> : <div className="blog-empty"><h1>This story is still taking shape.</h1><p>In the meantime, get practical notes for making your brand easier to trust.</p><Link className="button button-yellow" to="/blog">Explore the blog <ArrowRight size={15} /></Link></div>}
-      </article> : <section className="blog-index wrap">
-        <div className="blog-index-heading"><div><p className="kicker">GLYPH / FIELD NOTES</p><h1>Your good work<br /><em>deserves to be seen.</em></h1><p>Clear ideas for building a brand people notice, trust, and choose.</p></div><div className="blog-index-image"><img src={blogCoverImages[0].url} alt={blogCoverImages[0].label} /><span>THE CUSTOMER IS THE HERO</span></div></div>
+      {slug ? <div className="blog-article-backdrop" style={{ backgroundImage: `linear-gradient(#e9eef2df, #e9eef2df), url("${blogCover(article || {}, 0)}")` }}>
+        <article className="blog-article wrap">
+          {!posts ? <p className="loading-copy">Loading this article…</p> : article ? <div className="blog-article-panel">
+            <Link className="blog-back" to="/blog"><ArrowLeft size={15} /> Back to insights</Link>
+            <header className="blog-article-heading">
+              <p className="kicker">GLYPH / FIELD NOTES</p>
+              <h1>{article.title}</h1>
+              <div className="blog-article-meta"><span><i aria-hidden="true">G</i>{studio?.studio_name || 'GLYPH Studio'}</span><span>Category <b>Studio notes</b></span><time dateTime={article.published_at || ''}>{article.published_at ? new Date(article.published_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }) : 'Recently published'}</time></div>
+            </header>
+            <img className="blog-article-cover" src={blogCover(article, 0)} alt={`Cover image for ${article.title}`} />
+            {article.excerpt && <p className="blog-article-excerpt">{article.excerpt}</p>}
+            <div className="blog-article-body">{renderBlogBody(article.body)}</div>
+            <section className="blog-article-cta"><p className="kicker">YOUR NEXT STEP</p><h2>Ready to make your own mark?</h2><p>Tell us what you’re building. We’ll help you find a clear way forward.</p><Link className="button button-dark" to="/contact">Talk to the studio <ArrowRight size={15} /></Link></section>
+          </div> : <div className="blog-empty"><h1>This story is still taking shape.</h1><p>In the meantime, explore the latest notes from the studio.</p><Link className="button button-yellow" to="/blog">Explore the blog <ArrowRight size={15} /></Link></div>}
+          {error && <p className="notice-error">{error}</p>}
+        </article>
+      </div> : <section className="blog-index wrap">
         {studioError && <p className="notice-error">{studioError}</p>}
         {error && <p className="notice-error">{error}</p>}
-        <div className="blog-list-heading"><div><p className="kicker">PRACTICAL NOTES, FOR YOUR NEXT STEP</p><h2>Read, try, move forward.</h2></div><Link className="quiet-link" to="/contact">Need a guide? Let’s talk <ArrowRight size={15} /></Link></div>
-        {!posts ? <p className="loading-copy">Loading the latest notes…</p> : posts.length ? <div className="blog-card-grid">{posts.map((post, index) => <Link className="blog-card" key={post.id} to={`/blog/${post.slug}`}><img src={blogCover(post, index)} alt={`A business owner moving their idea forward: ${post.title}`} /><div><p className="kicker">{new Date(post.published_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}</p><h3>{post.title}</h3><p>{post.excerpt}</p><span>Read the note <ArrowRight size={14} /></span></div></Link>)}</div> : <div className="blog-empty"><BookOpen size={24} /><h3>Good ideas are on their way.</h3><p>We’re preparing practical, customer-first notes. Join the list and get the next one in your inbox.</p></div>}
+        {featuredPost ? <Link className="blog-featured" to={`/blog/${featuredPost.slug}`}><img src={blogCover(featuredPost, 0)} alt={`Cover image for ${featuredPost.title}`} /><div className="blog-featured-copy"><p className="kicker">FEATURED STORY</p><h1>{featuredPost.title}</h1>{featuredPost.excerpt && <p>{featuredPost.excerpt}</p>}<span>Read the story <ArrowRight size={16} /></span></div><ArrowRight className="blog-featured-arrow" size={38} aria-hidden="true" /></Link> : <div className="blog-featured blog-featured-empty"><img src={blogCoverImages[0].url} alt="" /><div className="blog-featured-copy"><p className="kicker">GLYPH / FIELD NOTES</p><h1>Good ideas for the work you’re building.</h1><p>Clear, practical notes on making your brand easier to see, trust, and choose.</p><Link to="/contact">Let’s talk about your next step <ArrowRight size={16} /></Link></div></div>}
+        <div className="blog-list-heading"><div><p className="kicker">IDEAS TO TAKE WITH YOU</p><h2>Recent blog posts</h2></div><Link className="quiet-link" to="/contact">Have a project in mind? Let’s talk <ArrowRight size={15} /></Link></div>
+        {!posts ? <p className="loading-copy">Loading the latest notes…</p> : posts.length > 1 ? <div className="blog-card-grid">{posts.slice(1).map((post, index) => <Link className="blog-card" key={post.id} to={`/blog/${post.slug}`}><img src={blogCover(post, index + 1)} alt={`Cover image for ${post.title}`} /><div><h3>{post.title}</h3>{post.excerpt && <p>{post.excerpt}</p>}<span className="blog-card-meta"><span><i aria-hidden="true">G</i>{studio?.studio_name || 'GLYPH Studio'}</span><time dateTime={post.published_at || ''}>{post.published_at ? new Date(post.published_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }) : 'Recently published'}</time></span></div></Link>)}</div> : posts.length === 1 ? <p className="blog-more-soon">More notes are on the way. Join the list to hear when they’re published.</p> : <div className="blog-empty"><BookOpen size={24} /><h3>Your first story starts here.</h3><p>Practical notes from the studio will appear here as soon as they’re published.</p></div>}
         <section className="blog-newsletter"><div><p className="kicker">A CLEARER NEXT STEP</p><h2>Useful ideas.<br /><em>No noise.</em></h2></div><NewsletterForm /></section>
       </section>}
     </main><SiteFooter />
@@ -2077,19 +2100,11 @@ function StudioEditorial() {
   const [campaigns, setCampaigns] = useState([])
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
-  const [format, setFormat] = useState('blog')
-  const [emailType, setEmailType] = useState('nurture')
-  const [brief, setBrief] = useState({
-    topic: '',
-    audience: 'Business owners, founders, creators, coaches and personal brands who want to be taken seriously',
-    service: 'Branding',
-    goal: 'Teach a useful next step and invite readers to book a free discovery call',
-    extra_context: '',
-  })
-  const [generating, setGenerating] = useState(false)
   const [saving, setSaving] = useState(false)
   const [sending, setSending] = useState(false)
   const [blogDraft, setBlogDraft] = useState(null)
+  const [coverFile, setCoverFile] = useState(null)
+  const [coverPreview, setCoverPreview] = useState('')
   const [emailDraft, setEmailDraft] = useState(null)
 
   const refresh = useCallback(async () => {
@@ -2122,47 +2137,43 @@ function StudioEditorial() {
 
   useEffect(() => { refresh() }, [refresh])
 
-  async function generateDraft(event) {
-    event.preventDefault()
-    if (!supabase) return
-    setGenerating(true)
+  useEffect(() => {
+    if (!coverFile) {
+      setCoverPreview('')
+      return undefined
+    }
+    const previewUrl = URL.createObjectURL(coverFile)
+    setCoverPreview(previewUrl)
+    return () => URL.revokeObjectURL(previewUrl)
+  }, [coverFile])
+
+  function createBlogDraft() {
+    setBlogDraft({
+      id: null,
+      title: '',
+      excerpt: '',
+      body: '',
+      cover_image_url: '',
+      seo_title: '',
+      meta_description: '',
+      keywords_text: '',
+      status: 'draft',
+      published_at: null,
+    })
+    setCoverFile(null)
+    setEmailDraft(null)
     setError('')
     setMessage('')
-    const request = {
-      format,
-      email_type: emailType,
-      ...brief,
-      cta_link: new URL(appPath('/contact'), window.location.origin).toString(),
-    }
-    const { data, error: requestError } = await supabase.functions.invoke('generate-storybrand-content', {
-      body: request,
-      timeout: 110_000,
-    })
-    setGenerating(false)
-    if (requestError || data?.error) {
-      setError(data?.error || requestError?.message || 'Could not generate the content draft.')
-      return
-    }
-    if (!data?.title || !data?.body || !Array.isArray(data.alternates)
-      || data.alternates.length !== 2 || !data.storybrand_angle) {
-      setError('The content service returned an incomplete StoryBrand draft. Please generate again.')
-      return
-    }
-    if (format === 'blog') {
-      setBlogDraft({
-        ...data,
-        id: null,
-        cover_image_url: blogCoverImages[0].url,
-        keywords_text: (data.keywords || []).join(', '),
-      })
-      setEmailDraft(null)
-    } else {
-      setEmailDraft(data)
-      setBlogDraft(null)
-    }
-    setMessage(format === 'blog'
-      ? 'Draft generated. Review the copy and image, then save it as a draft or publish when ready.'
-      : 'Email generated. Review the copy before sending it to confirmed subscribers.')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  function createEmailDraft() {
+    setEmailDraft({ title: '', body: '', preview_text: '' })
+    setBlogDraft(null)
+    setCoverFile(null)
+    setError('')
+    setMessage('')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   function editBlogDraft(field, value) {
@@ -2171,9 +2182,17 @@ function StudioEditorial() {
 
   async function saveBlog(status) {
     if (!supabase || !workspace?.id || !user?.id || !blogDraft) return
-    const wordCount = blogDraft.body.trim().split(/\s+/).filter(Boolean).length
-    if (status === 'published' && (wordCount < 700 || wordCount > 1200)) {
-      setError(`Published blog posts must stay within the 700–1,200 word StoryBrand brief. This draft has ${wordCount} words.`)
+    if (!blogDraft.title.trim() || !blogDraft.body.trim()) {
+      setError('Add a title and body before saving the blog post.')
+      return
+    }
+    if (status === 'published' && !coverFile && !blogDraft.cover_image_url) {
+      setError('Add a cover image before publishing the blog post.')
+      return
+    }
+    if (coverFile && (!['image/jpeg', 'image/png', 'image/webp'].includes(coverFile.type)
+      || coverFile.size > 10 * 1024 * 1024)) {
+      setError('Choose a JPG, PNG, or WebP image smaller than 10 MB.')
       return
     }
     const postSlug = slugify(blogDraft.title)
@@ -2183,6 +2202,24 @@ function StudioEditorial() {
     }
     setSaving(true)
     setError('')
+    setMessage('')
+    let coverImageUrl = blogDraft.cover_image_url
+    let uploadedCoverPath = ''
+    if (coverFile) {
+      const extension = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }[coverFile.type]
+      uploadedCoverPath = `${workspace.id}/${crypto.randomUUID()}.${extension}`
+      const { error: uploadError } = await supabase.storage.from('blog-covers').upload(uploadedCoverPath, coverFile, {
+        contentType: coverFile.type,
+        cacheControl: '3600',
+        upsert: false,
+      })
+      if (uploadError) {
+        setSaving(false)
+        setError(`Could not upload the cover image: ${uploadError.message}`)
+        return
+      }
+      coverImageUrl = supabase.storage.from('blog-covers').getPublicUrl(uploadedCoverPath).data.publicUrl
+    }
     const payload = {
       workspace_id: workspace.id,
       created_by: blogDraft.created_by || user.id,
@@ -2190,13 +2227,13 @@ function StudioEditorial() {
       slug: postSlug,
       excerpt: blogDraft.excerpt.trim(),
       body: blogDraft.body.trim(),
-      cover_image_url: blogDraft.cover_image_url,
+      cover_image_url: coverImageUrl,
       seo_title: blogDraft.seo_title.trim(),
       meta_description: blogDraft.meta_description.trim(),
       keywords: blogDraft.keywords_text.split(',').map((keyword) => keyword.trim()).filter(Boolean).slice(0, 6),
-      storybrand_angle: blogDraft.storybrand_angle || {},
-      alternate_hooks: blogDraft.alternates || [],
-      visual_direction: blogDraft.visual_direction || '',
+      storybrand_angle: {},
+      alternate_hooks: [],
+      visual_direction: '',
       status,
       published_at: status === 'published' ? blogDraft.published_at || new Date().toISOString() : null,
     }
@@ -2205,11 +2242,25 @@ function StudioEditorial() {
       : await supabase.from('blog_posts').insert(payload).select('id').single()
     setSaving(false)
     if (result.error) {
-      setError(result.error.message)
+      if (uploadedCoverPath) {
+        const { error: cleanupError } = await supabase.storage.from('blog-covers').remove([uploadedCoverPath])
+        setError(cleanupError
+          ? `${result.error.message} The uploaded cover image could not be removed: ${cleanupError.message}`
+          : result.error.message)
+      } else {
+        setError(result.error.message)
+      }
       return
     }
-    setMessage(status === 'published' ? 'Blog post published on the public site.' : 'Blog draft saved for review.')
+    let cleanupWarning = ''
+    const oldCoverPath = getBlogCoverPath(blogDraft.cover_image_url, workspace.id)
+    if (oldCoverPath && oldCoverPath !== uploadedCoverPath) {
+      const { error: cleanupError } = await supabase.storage.from('blog-covers').remove([oldCoverPath])
+      if (cleanupError) cleanupWarning = ` The previous cover image could not be removed: ${cleanupError.message}`
+    }
+    setMessage(`${status === 'published' ? 'Blog post published on the public site.' : 'Blog draft saved for review.'}${cleanupWarning}`)
     setBlogDraft(null)
+    setCoverFile(null)
     await refresh()
   }
 
@@ -2219,6 +2270,7 @@ function StudioEditorial() {
       keywords_text: (post.keywords || []).join(', '),
       alternates: post.alternate_hooks || [],
     })
+    setCoverFile(null)
     setEmailDraft(null)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -2229,13 +2281,27 @@ function StudioEditorial() {
       .eq('id', post.id).eq('workspace_id', workspace.id)
     if (deleteError) setError(deleteError.message)
     else {
-      if (blogDraft?.id === post.id) setBlogDraft(null)
+      const coverPath = getBlogCoverPath(post.cover_image_url, workspace.id)
+      let cleanupWarning = ''
+      if (coverPath) {
+        const { error: coverDeleteError } = await supabase.storage.from('blog-covers').remove([coverPath])
+        if (coverDeleteError) cleanupWarning = ` The cover image could not be removed: ${coverDeleteError.message}`
+      }
+      if (blogDraft?.id === post.id) {
+        setBlogDraft(null)
+        setCoverFile(null)
+      }
       await refresh()
+      if (cleanupWarning) setError(`The post was deleted.${cleanupWarning}`)
     }
   }
 
   async function sendEmail() {
     if (!supabase || !emailDraft) return
+    if (!emailDraft.title.trim() || !emailDraft.body.trim()) {
+      setError('Add an email subject and body before sending.')
+      return
+    }
     const confirmedCount = subscribers.filter((subscriber) => subscriber.confirmed_at && !subscriber.unsubscribed_at).length
     if (!confirmedCount) {
       setError('There are no confirmed subscribers yet. Add the newsletter signup to your site and wait for readers to confirm.')
@@ -2251,8 +2317,6 @@ function StudioEditorial() {
         subject: emailDraft.title.trim(),
         body: emailDraft.body.trim(),
         preview_text: emailDraft.preview_text || '',
-        alternate_subjects: emailDraft.alternates || [],
-        storybrand_angle: emailDraft.storybrand_angle || {},
       },
       timeout: 110_000,
     })
@@ -2267,29 +2331,21 @@ function StudioEditorial() {
   }
 
   const confirmedCount = subscribers.filter((subscriber) => subscriber.confirmed_at && !subscriber.unsubscribed_at).length
-  const draftWordCount = blogDraft?.body.trim().split(/\s+/).filter(Boolean).length || 0
 
   return <main className="studio-page studio-editorial">
-    <StudioPageHeader kicker="YOUR STUDIO / STORYBRAND" title="Words that make<br />your customer the hero." action={<Link className="button button-outline" to="/blog">View the public blog <ExternalLink size={15} /></Link>} />
-    <p className="editorial-intro">Generate blog and email drafts from your BrandScript. Review before publishing or sending. Calendar captions use the same StoryBrand rules.</p>
+    <StudioPageHeader kicker="YOUR STUDIO / EDITORIAL" title="Your words, your story." action={<Link className="button button-outline" to="/blog">View the public blog <ExternalLink size={15} /></Link>} />
+    <p className="editorial-intro">Write your own blog posts and newsletter emails, then review before publishing or sending.</p>
     {!isSupabaseConfigured && <p className="notice-error">{supabaseConfigMessage}</p>}
     {error && <p className="notice-error">{error}</p>}
     {message && <p className="notice-success">{message}</p>}
     <section className="editorial-stats"><div><span>CONFIRMED SUBSCRIBERS</span><b>{confirmedCount}</b></div><div><span>BLOG POSTS</span><b>{posts?.length ?? '—'}</b></div><div><span>DOMAIN SENDER</span><b>hello@glyphstudio.cv</b></div></section>
     <div className="editorial-layout">
       <section className="editorial-compose">
-        <div className="studio-section-heading"><div><p className="kicker">CREATE A REVIEWABLE DRAFT</p><h2>Start with the customer.</h2></div></div>
-        <form className="editorial-brief" onSubmit={generateDraft}>
-          <label>Format<select value={format} onChange={(event) => { setFormat(event.target.value); setBlogDraft(null); setEmailDraft(null) }}><option value="blog">Blog post (700–1,200 words)</option><option value="email">Newsletter email</option></select></label>
-          {format === 'email' && <label>Email type<select value={emailType} onChange={(event) => setEmailType(event.target.value)}><option value="nurture">Nurture — value first</option><option value="offer">Offer — genuine invitation</option></select></label>}
-          <label>Topic or angle<input required maxLength="500" value={brief.topic} onChange={(event) => setBrief((current) => ({ ...current, topic: event.target.value }))} placeholder="Why inconsistent branding makes good businesses easy to overlook" /></label>
-          <label>Audience<input required maxLength="300" value={brief.audience} onChange={(event) => setBrief((current) => ({ ...current, audience: event.target.value }))} /></label>
-          <label>Service to feature<input maxLength="200" value={brief.service} onChange={(event) => setBrief((current) => ({ ...current, service: event.target.value }))} /></label>
-          <label>Goal<input required maxLength="300" value={brief.goal} onChange={(event) => setBrief((current) => ({ ...current, goal: event.target.value }))} /></label>
-          <label>Real extra context, offer, or deadline (optional)<textarea rows="3" maxLength="1000" value={brief.extra_context} onChange={(event) => setBrief((current) => ({ ...current, extra_context: event.target.value }))} placeholder="Only include verified facts. Leave blank if there is no real offer or deadline." /></label>
-          <p className="muted-copy">The CTA points to your contact page. No auto-publishing or auto-sending; you review every draft.</p>
-          <button className="button button-dark" disabled={generating || !isSupabaseConfigured}>{generating ? 'Writing with the BrandScript…' : 'Generate a draft'} <Sparkles size={15} /></button>
-        </form>
+        <div className="studio-section-heading"><div><p className="kicker">CREATE A REVIEWABLE DRAFT</p><h2>Write it yourself.</h2></div></div>
+        <div className="editorial-create-actions">
+          <button className="button button-dark" disabled={!isSupabaseConfigured} onClick={createBlogDraft}><Plus size={15} /> Write a blog post</button>
+          <button className="button button-soft" disabled={!isSupabaseConfigured} onClick={createEmailDraft}><Mail size={15} /> Write a newsletter email</button>
+        </div>
       </section>
       <section className="editorial-audience">
         <div className="studio-section-heading"><div><p className="kicker">PERMISSION-BASED MAILING LIST</p><h2>Your readers choose.</h2></div></div>
@@ -2299,30 +2355,25 @@ function StudioEditorial() {
       </section>
     </div>
     {blogDraft && <section className="editorial-draft">
-      <div className="studio-section-heading"><div><p className="kicker">{blogDraft.id ? 'EDIT BLOG POST' : 'GENERATED BLOG DRAFT'}</p><h2>Review every detail.</h2></div><button className="icon-button" aria-label="Close blog draft" onClick={() => setBlogDraft(null)}><X size={17} /></button></div>
-      <div className="editorial-angle"><b>StoryBrand angle</b><span><strong>Hero + desire:</strong> {blogDraft.storybrand_angle?.hero_desire}</span><span><strong>Villain + internal problem:</strong> {blogDraft.storybrand_angle?.villain_internal_problem}</span><span><strong>Success vision:</strong> {blogDraft.storybrand_angle?.success_vision}</span></div>
-      <p className="editorial-alternates"><b>Alternate hooks:</b> {(blogDraft.alternates || []).join(' · ') || 'Generated hooks are shown when creating a new draft.'}</p>
-      <label>Title<input maxLength="180" value={blogDraft.title} onChange={(event) => editBlogDraft('title', event.target.value)} /></label>
+      <div className="studio-section-heading"><div><p className="kicker">{blogDraft.id ? 'EDIT BLOG POST' : 'NEW BLOG POST'}</p><h2>Add your content.</h2></div><button className="icon-button" aria-label="Close blog draft" onClick={() => { setBlogDraft(null); setCoverFile(null) }}><X size={17} /></button></div>
+      <label>Title<input required maxLength="180" value={blogDraft.title} onChange={(event) => editBlogDraft('title', event.target.value)} /></label>
       <label>Excerpt<textarea rows="2" maxLength="400" value={blogDraft.excerpt} onChange={(event) => editBlogDraft('excerpt', event.target.value)} /></label>
-      <div className="editorial-cover-picker"><label>Customer-as-hero cover image<select value={blogDraft.cover_image_url} onChange={(event) => editBlogDraft('cover_image_url', event.target.value)}>{blogCoverImages.map((image) => <option value={image.url} key={image.url}>{image.label}</option>)}</select></label><img src={blogDraft.cover_image_url || blogCoverImages[0].url} alt="Preview of the selected customer-focused blog cover" /></div>
-      {blogDraft.visual_direction && <p className="muted-copy"><b>Visual direction:</b> {blogDraft.visual_direction}</p>}
-      <label>Article body · {draftWordCount} words<textarea className="editorial-body-input" rows="24" maxLength="30000" value={blogDraft.body} onChange={(event) => editBlogDraft('body', event.target.value)} /></label>
+      <div className="editorial-cover-picker"><label>Cover image<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setCoverFile(event.target.files?.[0] || null)} /><small className="muted-copy">Add your own JPG, PNG, or WebP image (up to 10 MB). A cover image is required to publish.</small></label>{(coverPreview || blogDraft.cover_image_url) && <img src={coverPreview || blogDraft.cover_image_url} alt="Preview of the blog cover image" />}</div>
+      <label>Article body<textarea required className="editorial-body-input" rows="24" maxLength="30000" value={blogDraft.body} onChange={(event) => editBlogDraft('body', event.target.value)} /></label>
       <div className="editorial-seo-fields"><label>SEO title<input maxLength="180" value={blogDraft.seo_title} onChange={(event) => editBlogDraft('seo_title', event.target.value)} /></label><label>Meta description · {blogDraft.meta_description?.length || 0}/155<input maxLength="155" value={blogDraft.meta_description} onChange={(event) => editBlogDraft('meta_description', event.target.value)} /></label><label>Suggested keywords<input value={blogDraft.keywords_text} onChange={(event) => editBlogDraft('keywords_text', event.target.value)} /></label></div>
-      <div className="editorial-draft-actions"><button className="button button-soft" disabled={saving} onClick={() => saveBlog('draft')}>{saving ? 'Saving…' : 'Save as draft'}</button><button className="button button-dark" disabled={saving || draftWordCount < 700 || draftWordCount > 1200} onClick={() => saveBlog('published')}>{saving ? 'Publishing…' : blogDraft.status === 'published' ? 'Update published post' : 'Publish post'} <ArrowRight size={15} /></button></div>
+      <div className="editorial-draft-actions"><button className="button button-soft" disabled={saving} onClick={() => saveBlog('draft')}>{saving ? 'Saving…' : 'Save as draft'}</button><button className="button button-dark" disabled={saving || !blogDraft.title.trim() || !blogDraft.body.trim() || (!coverFile && !blogDraft.cover_image_url)} onClick={() => saveBlog('published')}>{saving ? 'Publishing…' : blogDraft.status === 'published' ? 'Update published post' : 'Publish post'} <ArrowRight size={15} /></button></div>
     </section>}
     {emailDraft && <section className="editorial-draft">
-      <div className="studio-section-heading"><div><p className="kicker">REVIEW BEFORE SENDING</p><h2>Your email draft.</h2></div><button className="icon-button" aria-label="Close email draft" onClick={() => setEmailDraft(null)}><X size={17} /></button></div>
-      <div className="editorial-angle"><b>StoryBrand angle</b><span><strong>Hero + desire:</strong> {emailDraft.storybrand_angle?.hero_desire}</span><span><strong>Villain + internal problem:</strong> {emailDraft.storybrand_angle?.villain_internal_problem}</span><span><strong>Success vision:</strong> {emailDraft.storybrand_angle?.success_vision}</span></div>
-      <label>Subject line<input maxLength="49" value={emailDraft.title} onChange={(event) => setEmailDraft((current) => ({ ...current, title: event.target.value }))} /></label>
-      <p className="editorial-alternates"><b>Alternate subject lines:</b> {emailDraft.alternates.join(' · ')}</p>
+      <div className="studio-section-heading"><div><p className="kicker">WRITE BEFORE SENDING</p><h2>Add your email content.</h2></div><button className="icon-button" aria-label="Close email draft" onClick={() => setEmailDraft(null)}><X size={17} /></button></div>
+      <label>Subject line<input required maxLength="49" value={emailDraft.title} onChange={(event) => setEmailDraft((current) => ({ ...current, title: event.target.value }))} /></label>
       <label>Preview text<input maxLength="200" value={emailDraft.preview_text || ''} onChange={(event) => setEmailDraft((current) => ({ ...current, preview_text: event.target.value }))} /></label>
-      <label>Email body<textarea className="editorial-body-input" rows="12" maxLength="12000" value={emailDraft.body} onChange={(event) => setEmailDraft((current) => ({ ...current, body: event.target.value }))} /></label>
+      <label>Email body<textarea required className="editorial-body-input" rows="12" maxLength="12000" value={emailDraft.body} onChange={(event) => setEmailDraft((current) => ({ ...current, body: event.target.value }))} /></label>
       <p className="muted-copy">From hello@glyphstudio.cv. Send is enabled only after Resend and your sending domain are configured.</p>
       <button className="button button-dark" disabled={sending || !confirmedCount || !emailDraft.title.trim() || emailDraft.title.trim().length >= 50} onClick={sendEmail}>{sending ? 'Sending…' : `Send to ${confirmedCount} confirmed subscribers`} <Send size={15} /></button>
     </section>}
     <section className="editorial-posts">
       <div className="studio-section-heading"><div><p className="kicker">REVIEW BEFORE IT GOES LIVE</p><h2>Blog drafts and posts</h2></div><Link className="quiet-link" to="/blog">Public blog <ArrowRight size={15} /></Link></div>
-      {posts === null ? <p className="loading-copy">Loading editorial workspace…</p> : posts.length ? <div className="editorial-post-list">{posts.map((post) => <article key={post.id}><img src={blogCover(post, 0)} alt="" /><div><b>{post.title}</b><span>{post.status === 'published' ? `Published ${post.published_at ? new Date(post.published_at).toLocaleDateString() : ''}` : 'Draft for review'}</span><p>{post.excerpt}</p></div><button className="button button-soft" onClick={() => editSavedPost(post)}>Edit</button><button className="button button-danger" onClick={() => deleteBlogPost(post)} aria-label={`Delete ${post.title}`}><Trash2 size={15} /></button></article>)}</div> : <div className="studio-empty"><BookOpen /><h3>Your first story starts with the customer.</h3><p>Generate a draft above, review it, then publish when it is ready.</p></div>}
+      {posts === null ? <p className="loading-copy">Loading editorial workspace…</p> : posts.length ? <div className="editorial-post-list">{posts.map((post) => <article key={post.id}><img src={blogCover(post, 0)} alt="" /><div><b>{post.title}</b><span>{post.status === 'published' ? `Published ${post.published_at ? new Date(post.published_at).toLocaleDateString() : ''}` : 'Draft for review'}</span><p>{post.excerpt}</p></div><button className="button button-soft" onClick={() => editSavedPost(post)}>Edit</button><button className="button button-danger" onClick={() => deleteBlogPost(post)} aria-label={`Delete ${post.title}`}><Trash2 size={15} /></button></article>)}</div> : <div className="studio-empty"><BookOpen /><h3>Your first story starts with you.</h3><p>Write a post above, add your cover image, then publish when it is ready.</p></div>}
     </section>
   </main>
 }

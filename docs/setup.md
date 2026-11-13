@@ -92,20 +92,20 @@ should be fact-checked before publishing. See
 [`integrations.md`](./integrations.md#gemini-social-content) for data flow and
 the feature's limits.
 
-## StoryBrand blog and newsletter
+## Blog and newsletter
 
-The public blog, private editorial workspace, daily draft generator,
-double-opt-in mailing list, and Resend newsletter sender use the
-`20261111100000_storybrand_blog_newsletter.sql` migration and the
-`generate-storybrand-content`, `generate-daily-blog`, and `newsletter` Edge
-Functions. The same shared BrandScript rules also guide social-calendar drafts.
+The public blog, private manual editor, double-opt-in mailing list, and Resend
+newsletter sender use the
+`20261111100000_storybrand_blog_newsletter.sql` and
+`20261113130000_manual_blog_covers.sql` migrations. Blog copy, titles, and
+cover images are supplied by you; cover images are uploaded to the public
+`blog-covers` storage bucket. Newsletter subject lines and body copy are also
+written by you. The `newsletter` Edge Function handles signup and delivery.
 
-1. Apply migrations and deploy the functions:
+1. Apply migrations and deploy the newsletter function:
 
    ```bash
    supabase db push
-   supabase functions deploy generate-storybrand-content
-   supabase functions deploy generate-daily-blog
    supabase functions deploy newsletter
    ```
 
@@ -120,54 +120,26 @@ Functions. The same shared BrandScript rules also guide social-calendar drafts.
    supabase secrets set RESEND_API_KEY=re_your_resend_key "NEWSLETTER_FROM=GLYPH Studio <hello@glyphstudio.cv>" PUBLIC_APP_URL=https://your-site.example
    ```
 
-   The editorial generator also requires the `GEMINI_API_KEY` and optional
-   `GEMINI_MODEL` secrets from the Gemini social-content setup above. These are
-   server-only secrets; never add them to `.env.local`, a `VITE_*` variable, or
-   source control.
-
-   Set a separate random secret for the scheduled daily job:
-
-   ```bash
-   supabase secrets set DAILY_BLOG_SECRET=replace_with_a_long_random_secret
-   ```
-
-4. To schedule one reviewed blog draft per day, enable the `pg_cron`, `pg_net`,
-   and `supabase_vault` extensions in the Supabase Dashboard. In the SQL
-   Editor, store the same random job secret in Vault and schedule a daily
-   08:00 UTC invocation (replace the project URL):
-
-   ```sql
-   select vault.create_secret('replace_with_a_long_random_secret', 'daily_blog_secret');
-
-   select cron.schedule(
-     'generate-daily-blog',
-     '0 8 * * *',
-     $job$
-       select net.http_post(
-         url := 'https://<project-ref>.supabase.co/functions/v1/generate-daily-blog',
-         headers := jsonb_build_object(
-           'Content-Type', 'application/json',
-           'x-job-secret', (select decrypted_secret from vault.decrypted_secrets where name = 'daily_blog_secret')
-         ),
-         body := '{}'::jsonb
-       );
-     $job$
-   );
-   ```
-
-   Daily articles are saved as drafts and are never published automatically.
-   A unique workspace/date check prevents duplicate drafts on retries. Review
-   daily runs and generated drafts in Studio before publishing.
-
-5. Open `/studio/editorial` to generate and review drafts. Published blog
+4. Open `/studio/editorial` to write and review posts or emails. Published blog
    articles appear at `/blog`. Email signup requires readers to confirm their
    address. Only confirmed subscribers can be sent a campaign; sends are manual
    and currently limited to 100 subscribers per campaign.
 
-6. Test signup and confirmation using an address you control, then test a
+5. Test signup and confirmation using an address you control, then test a
    campaign with that confirmed address before sending to a larger list.
    Resend acceptance means the provider accepted the message, not that it
    reached the inbox; check Resend for delivery and bounce status.
+
+If this project previously deployed AI editorial functions or scheduled daily
+blog generation, remove those old remote resources once:
+
+```bash
+supabase functions delete generate-storybrand-content
+supabase functions delete generate-daily-blog
+```
+
+If you created the documented `pg_cron` job, remove it in the Supabase SQL
+Editor with `select cron.unschedule('generate-daily-blog');`.
 
 See [`integrations.md`](./integrations.md#storybrand-blog-and-newsletter) for
 the privacy and delivery behavior.
