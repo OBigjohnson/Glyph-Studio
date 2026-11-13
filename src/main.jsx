@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useState } from 'react'
+import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { ArrowDownRight, ArrowLeft, ArrowRight, BookOpen, CalendarDays, Check, ChevronLeft, ChevronRight, CircleUserRound, Copy, Download, ExternalLink, FileText, FolderKanban, ImagePlus, Link2, LockKeyhole, LogOut, Mail, Menu, MessageCircle, Palette, Plus, Search, Send, Settings2, Sparkles, Trash2, Users, X } from 'lucide-react'
@@ -287,6 +287,12 @@ function getBlogCoverPath(url, workspaceId) {
   }
 }
 
+function getBlogInlineImagePaths(body, workspaceId) {
+  const imageUrls = [...body.matchAll(/!\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/g)]
+    .map((match) => match[1])
+  return [...new Set(imageUrls.map((url) => getBlogCoverPath(url, workspaceId)).filter(Boolean))]
+}
+
 function NewsletterForm() {
   const { studio } = usePublicStudio()
   const [busy, setBusy] = useState(false)
@@ -314,7 +320,7 @@ function NewsletterForm() {
     })
     setBusy(false)
     if (requestError || data?.error) {
-      setError(data?.error || requestError?.message || 'Could not submit your subscription.')
+      setError(data?.error || await edgeFunctionError(requestError, 'Could not submit your subscription.'))
       return
     }
     setMessage('Check your inbox for a confirmation link. Your subscription starts after you confirm.')
@@ -330,6 +336,155 @@ function NewsletterForm() {
     {message && <span className="newsletter-feedback" role="status">{message}</span>}
     <small>Double opt-in. Unsubscribe any time.</small>
   </form>
+}
+
+const consultationOffers = [
+  { key: 'duration-15', label: '15 minutes · ₦10,000 / $7' },
+  { key: 'duration-30', label: '30 minutes · ₦18,000 / $13' },
+  { key: 'duration-45', label: '45 minutes · ₦25,000 / $19' },
+  { key: 'duration-60', label: '1 hour · ₦35,000 / $26' },
+  { key: 'duration-90', label: '90 minutes · ₦50,000 / $37' },
+  { key: 'duration-120', label: '2 hours · ₦70,000 / $52' },
+  { key: 'branding-strategy', label: 'Branding & Graphic Design Strategy · 1 hour · ₦40,000 / $30' },
+  { key: 'video-production', label: 'Video Editing & Production · 1 hour · ₦40,000 / $30' },
+  { key: 'motion-graphics', label: 'Motion Graphics & Animation · 1 hour · ₦40,000 / $30' },
+  { key: 'social-content-strategy', label: 'Social Media & Content Strategy · 1 hour · ₦40,000 / $30' },
+  { key: 'creative-direction', label: 'Creative Direction & Business · 1 hour · ₦50,000 / $37' },
+]
+
+function lagosDateTimeLocal(date) {
+  return new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Africa/Lagos',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).format(date).replace(' ', 'T')
+}
+
+async function requestEditorialCheckout(payload) {
+  if (!supabase) throw new Error(supabaseConfigMessage)
+  const { data, error } = await supabase.functions.invoke('editorial-checkout', { body: payload })
+  if (error) throw new Error(await edgeFunctionError(error, 'Could not open secure checkout.'))
+  if (data?.error) throw new Error(data.error)
+  if (typeof data?.checkout_url !== 'string') throw new Error('Bachs did not return a checkout link.')
+  window.location.assign(data.checkout_url)
+}
+
+function ConsultationBooking({ post }) {
+  const [serviceKey, setServiceKey] = useState(consultationOffers[1].key)
+  const [currency, setCurrency] = useState('NGN')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  async function submit(event) {
+    event.preventDefault()
+    const form = new FormData(event.currentTarget)
+    setBusy(true)
+    setError('')
+    try {
+      await requestEditorialCheckout({
+        action: 'checkout',
+        purchase_type: 'consultation',
+        post_slug: post.slug,
+        service_key: serviceKey,
+        currency,
+        name: String(form.get('name') || '').trim(),
+        email: String(form.get('email') || '').trim(),
+        requested_at: String(form.get('requested_at') || ''),
+      })
+    } catch (checkoutError) {
+      setError(checkoutError instanceof Error ? checkoutError.message : String(checkoutError))
+      setBusy(false)
+    }
+  }
+
+  return <section id="consultation" className="editorial-offer-card">
+    <p className="kicker">BOOK A CONSULTATION</p>
+    <h3>Get thoughtful direction for your next step.</h3>
+    <p className="editorial-offer-prices">From ₦10,000 / $7 · 15 minutes. Choose from six session lengths or a specialist consultation.</p>
+    <form onSubmit={submit}>
+      <label>Consultation<select value={serviceKey} onChange={(event) => setServiceKey(event.target.value)}>{consultationOffers.map((offer) => <option value={offer.key} key={offer.key}>{offer.label}</option>)}</select></label>
+      <label>Pay in<select value={currency} onChange={(event) => setCurrency(event.target.value)}><option value="NGN">Nigerian naira (NGN)</option><option value="USD">US dollars (USD)</option></select></label>
+      <label>Your name<input name="name" autoComplete="name" maxLength="160" /></label>
+      <label>Email for your receipt and appointment<input name="email" type="email" required maxLength="320" autoComplete="email" /></label>
+      <label>Preferred date and time <span>(Africa/Lagos)</span><input name="requested_at" type="datetime-local" required min={lagosDateTimeLocal(new Date(Date.now() + 60 * 60 * 1000))} /></label>
+      {error && <span className="newsletter-feedback newsletter-error" role="alert">{error}</span>}
+      <button className="button button-dark" disabled={busy}>{busy ? 'Opening secure checkout…' : 'Continue to payment'} <ArrowRight size={15} /></button>
+    </form>
+    <ul className="editorial-offer-terms">
+      <li>Sessions are paid in advance. We’ll email to confirm the requested time.</li>
+      <li>Reschedule at least 24 hours ahead. Extra time is ₦10,000 / $7 per 15 minutes.</li>
+      <li>Advice and recommendations are included; additional deliverables are quoted separately.</li>
+      <li>A complimentary 10-minute introductory call is available for prospective clients.</li>
+    </ul>
+    <p className="muted-copy">USD prices are approximate equivalents and may be affected by exchange rates and payment fees.</p>
+  </section>
+}
+
+function PaidDocumentOffer({ post }) {
+  const [currency, setCurrency] = useState('NGN')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const amount = currency === 'NGN' ? post.document_ngn_price : post.document_usd_price
+
+  async function submit(event) {
+    event.preventDefault()
+    const email = String(new FormData(event.currentTarget).get('email') || '').trim()
+    setBusy(true)
+    setError('')
+    try {
+      await requestEditorialCheckout({
+        action: 'checkout',
+        purchase_type: 'document',
+        post_slug: post.slug,
+        currency,
+        email,
+      })
+    } catch (checkoutError) {
+      setError(checkoutError instanceof Error ? checkoutError.message : String(checkoutError))
+      setBusy(false)
+    }
+  }
+
+  return <section id="paid-document" className="editorial-offer-card editorial-document-offer">
+    <p className="kicker">GO DEEPER / PAID DOWNLOAD</p>
+    <h3><FileText size={19} /> {post.document_title}</h3>
+    <p>Pay securely to receive a receipt and download the PDF to your device.</p>
+    <form onSubmit={submit}>
+      <label>Pay in<select value={currency} onChange={(event) => setCurrency(event.target.value)}><option value="NGN">Nigerian naira (NGN)</option><option value="USD">US dollars (USD)</option></select></label>
+      <label>Email for your receipt and download link<input name="email" type="email" required maxLength="320" autoComplete="email" /></label>
+      {error && <span className="newsletter-feedback newsletter-error" role="alert">{error}</span>}
+      <button className="button button-dark" disabled={busy}>{busy ? 'Opening secure checkout…' : `Pay ${currency === 'NGN' ? '₦' : '$'}${Number(amount).toLocaleString()} and download`} <ArrowRight size={15} /></button>
+    </form>
+    <p className="muted-copy">The secure download is available after the payment gateway confirms your payment.</p>
+  </section>
+}
+
+function BlogShareActions({ post }) {
+  const [copied, setCopied] = useState(false)
+  const url = `${window.location.origin}${appPath(`/blog/${post.slug}`)}`
+  const encodedUrl = encodeURIComponent(url)
+  const encodedTitle = encodeURIComponent(post.title)
+  async function copyLink() {
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1800)
+    } catch {
+      window.prompt('Copy this blog post link:', url)
+    }
+  }
+  return <nav className="blog-share-actions" aria-label="Share this blog post">
+    <b>Share this post</b>
+    <button className="button button-soft" onClick={copyLink}><Link2 size={14} />{copied ? 'Link copied' : 'Copy link'}</button>
+    <a className="button button-soft" href={`https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}`} target="_blank" rel="noreferrer">Facebook</a>
+    <a className="button button-soft" href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodedUrl}`} target="_blank" rel="noreferrer">LinkedIn</a>
+    <a className="button button-soft" href={`https://twitter.com/intent/tweet?url=${encodedUrl}&text=${encodedTitle}`} target="_blank" rel="noreferrer">X</a>
+    <a className="button button-soft" href={`https://wa.me/?text=${encodedTitle}%20${encodedUrl}`} target="_blank" rel="noreferrer">WhatsApp</a>
+  </nav>
 }
 
 function NewsletterAction() {
@@ -368,12 +523,17 @@ function renderBlogBody(body) {
     const value = block.trim()
     if (!value) return null
     const heading = value.match(/^#{1,3}\s+(.+)$/)
-    if (heading) return <h2 key={index}>{heading[1]}</h2>
+    if (heading) return <h2 className={`blog-body-heading blog-body-heading-${index % 4}`} key={index}>{heading[1]}</h2>
+    const image = value.match(/^!\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)$/)
+    if (image) return <figure className="blog-body-figure" key={index}><img src={image[2]} alt={image[1]} loading="lazy" decoding="async" />{image[1] && <figcaption>{image[1]}</figcaption>}</figure>
     const lines = value.split('\n')
     if (lines.every((line) => /^[-*]\s+/.test(line.trim()))) {
-      return <ul key={index}>{lines.map((line, itemIndex) => <li key={`${index}-${itemIndex}`}>{line.trim().replace(/^[-*]\s+/, '')}</li>)}</ul>
+      return <ul className="blog-body-list" key={index}>{lines.map((line, itemIndex) => <li key={`${index}-${itemIndex}`}>{line.trim().replace(/^[-*]\s+/, '')}</li>)}</ul>
     }
-    return <p key={index}>{value}</p>
+    if (lines.every((line) => /^>\s?/.test(line.trim()))) {
+      return <blockquote className="blog-body-quote" key={index}>{lines.map((line) => line.trim().replace(/^>\s?/, '')).join(' ')}</blockquote>
+    }
+    return <p className={`blog-body-paragraph blog-body-paragraph-${index % 3}`} key={index}>{value}</p>
   })
 }
 
@@ -393,7 +553,7 @@ function BlogPage() {
       return () => { active = false }
     }
     let query = supabase.from('blog_posts')
-      .select('id, title, slug, excerpt, body, cover_image_url, seo_title, meta_description, keywords, published_at')
+      .select('id, title, slug, excerpt, body, cover_image_url, seo_title, meta_description, keywords, published_at, document_title, document_ngn_price, document_usd_price')
       .eq('workspace_id', studio.workspace_id)
       .eq('status', 'published')
       .order('published_at', { ascending: false })
@@ -425,6 +585,14 @@ function BlogPage() {
     }
   }, [article])
 
+  useEffect(() => {
+    if (!slug || !window.location.hash) return undefined
+    const timer = window.setTimeout(() => {
+      document.querySelector(window.location.hash)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }, 100)
+    return () => window.clearTimeout(timer)
+  }, [slug, article])
+
   return <div className="public-site marketing-site blog-site"><SiteNav />
     <main>
       {slug ? <div className="blog-article-backdrop" style={{ backgroundImage: `linear-gradient(#e9eef2df, #e9eef2df), url("${blogCover(article || {}, 0)}")` }}>
@@ -438,7 +606,21 @@ function BlogPage() {
             </header>
             <img className="blog-article-cover" src={blogCover(article, 0)} alt={`Cover image for ${article.title}`} />
             {article.excerpt && <p className="blog-article-excerpt">{article.excerpt}</p>}
+            <nav className={`blog-offer-shortcuts${article.document_title ? ' has-document' : ''}`} aria-label="Explore this post's offers">
+              <a className="blog-offer-shortcut blog-offer-consultation" href="#consultation">
+                <span>YOUR NEXT STEP / 01</span><b>Book a consultation</b><small>From ₦10,000 / $7 · pick a session that fits</small><span className="blog-offer-shortcut-action">Explore sessions <ArrowRight size={15} /></span>
+              </a>
+              {article.document_title && <a className="blog-offer-shortcut blog-offer-document" href="#paid-document">
+                <span>GO DEEPER / 02</span><b>{article.document_title}</b><small>PDF guide · ₦{Number(article.document_ngn_price).toLocaleString()} / ${Number(article.document_usd_price).toLocaleString()}</small><span className="blog-offer-shortcut-action">Get the guide <ArrowRight size={15} /></span>
+              </a>}
+            </nav>
+            <section className="blog-reading-newsletter"><div><p className="kicker">GET THE NEXT NOTE</p><h2>Useful ideas, straight to your inbox.</h2><p>Join the list for occasional, practical notes from GLYPH Studio.</p></div><NewsletterForm /></section>
             <div className="blog-article-body">{renderBlogBody(article.body)}</div>
+            <section className="blog-article-offers">
+              <ConsultationBooking post={article} />
+              {article.document_title && <PaidDocumentOffer post={article} />}
+            </section>
+            <BlogShareActions post={article} />
             <section className="blog-article-cta"><p className="kicker">YOUR NEXT STEP</p><h2>Ready to make your own mark?</h2><p>Tell us what you’re building. We’ll help you find a clear way forward.</p><Link className="button button-dark" to="/contact">Talk to the studio <ArrowRight size={15} /></Link></section>
           </div> : <div className="blog-empty"><h1>This story is still taking shape.</h1><p>In the meantime, explore the latest notes from the studio.</p><Link className="button button-yellow" to="/blog">Explore the blog <ArrowRight size={15} /></Link></div>}
           {error && <p className="notice-error">{error}</p>}
@@ -2098,20 +2280,25 @@ function StudioEditorial() {
   const [posts, setPosts] = useState(null)
   const [subscribers, setSubscribers] = useState([])
   const [campaigns, setCampaigns] = useState([])
+  const [purchases, setPurchases] = useState([])
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [saving, setSaving] = useState(false)
   const [sending, setSending] = useState(false)
   const [blogDraft, setBlogDraft] = useState(null)
+  const [inlineImages, setInlineImages] = useState([])
   const [coverFile, setCoverFile] = useState(null)
   const [coverPreview, setCoverPreview] = useState('')
+  const [documentFile, setDocumentFile] = useState(null)
+  const [removeDocument, setRemoveDocument] = useState(false)
   const [emailDraft, setEmailDraft] = useState(null)
+  const bodyTextareaRef = useRef(null)
 
   const refresh = useCallback(async () => {
     if (!supabase || !workspace?.id) return
-    const [postResult, subscriberResult, campaignResult] = await Promise.all([
+    const [postResult, subscriberResult, campaignResult, purchaseResult] = await Promise.all([
       supabase.from('blog_posts')
-        .select('id, title, slug, excerpt, body, cover_image_url, seo_title, meta_description, keywords, storybrand_angle, alternate_hooks, visual_direction, status, published_at, updated_at')
+        .select('id, title, slug, excerpt, body, cover_image_url, seo_title, meta_description, keywords, storybrand_angle, alternate_hooks, visual_direction, status, published_at, updated_at, document_storage_path, document_title, document_ngn_price, document_usd_price')
         .eq('workspace_id', workspace.id)
         .order('updated_at', { ascending: false }),
       supabase.from('newsletter_subscribers')
@@ -2123,8 +2310,13 @@ function StudioEditorial() {
         .eq('workspace_id', workspace.id)
         .order('sent_at', { ascending: false })
         .limit(10),
+      supabase.from('editorial_purchases')
+        .select('id, purchase_type, product_title, customer_name, customer_email, duration_minutes, requested_at, requested_timezone, currency, amount, status, receipt_number, created_at, paid_at')
+        .eq('workspace_id', workspace.id)
+        .eq('purchase_type', 'consultation')
+        .order('created_at', { ascending: false }),
     ])
-    const failed = [postResult, subscriberResult, campaignResult].find((result) => result.error)
+    const failed = [postResult, subscriberResult, campaignResult, purchaseResult].find((result) => result.error)
     if (failed?.error) {
       setError(failed.error.message)
       return
@@ -2132,6 +2324,7 @@ function StudioEditorial() {
     setPosts(postResult.data || [])
     setSubscribers(subscriberResult.data || [])
     setCampaigns(campaignResult.data || [])
+    setPurchases(purchaseResult.data || [])
     setError('')
   }, [workspace?.id])
 
@@ -2157,10 +2350,17 @@ function StudioEditorial() {
       seo_title: '',
       meta_description: '',
       keywords_text: '',
+      document_storage_path: null,
+      document_title: '',
+      document_ngn_price: '',
+      document_usd_price: '',
       status: 'draft',
       published_at: null,
     })
+    setInlineImages([])
     setCoverFile(null)
+    setDocumentFile(null)
+    setRemoveDocument(false)
     setEmailDraft(null)
     setError('')
     setMessage('')
@@ -2170,7 +2370,10 @@ function StudioEditorial() {
   function createEmailDraft() {
     setEmailDraft({ title: '', body: '', preview_text: '' })
     setBlogDraft(null)
+    setInlineImages([])
     setCoverFile(null)
+    setDocumentFile(null)
+    setRemoveDocument(false)
     setError('')
     setMessage('')
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -2178,6 +2381,76 @@ function StudioEditorial() {
 
   function editBlogDraft(field, value) {
     setBlogDraft((current) => ({ ...current, [field]: value }))
+  }
+
+  function addInlineImages(event) {
+    const files = Array.from(event.currentTarget.files || [])
+    const allowed = files.filter((file) => ['image/jpeg', 'image/png', 'image/webp'].includes(file.type)
+      && file.size <= 10 * 1024 * 1024)
+    setError(allowed.length !== files.length ? 'Inline images must be JPG, PNG, or WebP files smaller than 10 MB.' : '')
+    if (allowed.length) {
+      setInlineImages((current) => [...current, ...allowed.map((file) => ({
+        id: crypto.randomUUID(),
+        file,
+        altText: file.name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' '),
+      }))])
+    }
+    event.currentTarget.value = ''
+  }
+
+  function insertInlineImage(imageId) {
+    const marker = `![pending-image](pending-image:${imageId})`
+    const textarea = bodyTextareaRef.current
+    const body = blogDraft.body || ''
+    const start = textarea?.selectionStart ?? body.length
+    const end = textarea?.selectionEnd ?? start
+    const before = body.slice(0, start)
+    const after = body.slice(end)
+    const prefix = before && !before.endsWith('\n\n') ? before.endsWith('\n') ? '\n' : '\n\n' : ''
+    const suffix = after && !after.startsWith('\n\n') ? after.startsWith('\n') ? '\n' : '\n\n' : ''
+    const nextBody = `${before}${prefix}${marker}${suffix}${after}`
+    editBlogDraft('body', nextBody)
+    requestAnimationFrame(() => {
+      if (!textarea) return
+      textarea.focus()
+      const cursor = before.length + prefix.length + marker.length
+      textarea.setSelectionRange(cursor, cursor)
+    })
+  }
+
+  function removeInlineImage(imageId) {
+    const marker = `![pending-image](pending-image:${imageId})`
+    editBlogDraft('body', (blogDraft.body || '').split(marker).join('').replace(/\n{3,}/g, '\n\n'))
+    setInlineImages((current) => current.filter((image) => image.id !== imageId))
+  }
+
+  async function removeDocumentIfUnpurchased(path) {
+    const { data: purchase, error: purchaseError } = await supabase.from('editorial_purchases')
+      .select('id')
+      .eq('document_storage_path', path)
+      .limit(1)
+      .maybeSingle()
+    if (purchaseError) return `Could not check paid document access: ${purchaseError.message}`
+    if (purchase) return ''
+    const { error: removeError } = await supabase.storage.from('paid-blog-documents').remove([path])
+    return removeError ? `The old paid PDF could not be removed: ${removeError.message}` : ''
+  }
+
+  async function removeBlogImagesIfUnused(paths, excludedPostId) {
+    const candidates = [...new Set(paths.filter(Boolean))]
+    if (!candidates.length) return ''
+    let query = supabase.from('blog_posts').select('id, body, cover_image_url').eq('workspace_id', workspace.id)
+    if (excludedPostId) query = query.neq('id', excludedPostId)
+    const { data: otherPosts, error: lookupError } = await query
+    if (lookupError) return `Could not check whether previous blog images are still in use: ${lookupError.message}`
+    const referencedPaths = new Set((otherPosts || []).flatMap((post) => [
+      getBlogCoverPath(post.cover_image_url, workspace.id),
+      ...getBlogInlineImagePaths(post.body || '', workspace.id),
+    ].filter(Boolean)))
+    const unusedPaths = candidates.filter((path) => !referencedPaths.has(path))
+    if (!unusedPaths.length) return ''
+    const { error: cleanupError } = await supabase.storage.from('blog-covers').remove(unusedPaths)
+    return cleanupError ? `Previous blog images could not be removed: ${cleanupError.message}` : ''
   }
 
   async function saveBlog(status) {
@@ -2195,6 +2468,20 @@ function StudioEditorial() {
       setError('Choose a JPG, PNG, or WebP image smaller than 10 MB.')
       return
     }
+    if (documentFile && (documentFile.type !== 'application/pdf' || documentFile.size > 25 * 1024 * 1024)) {
+      setError('Choose a PDF document smaller than 25 MB.')
+      return
+    }
+    const keepsDocument = Boolean((blogDraft.document_storage_path && !removeDocument) || documentFile)
+    const documentTitle = String(blogDraft.document_title || documentFile?.name || '').trim()
+    const documentNgnPrice = Number(blogDraft.document_ngn_price)
+    const documentUsdPrice = Number(blogDraft.document_usd_price)
+    if (keepsDocument && (!documentTitle || documentTitle.length > 180
+      || !Number.isFinite(documentNgnPrice) || documentNgnPrice <= 0
+      || !Number.isFinite(documentUsdPrice) || documentUsdPrice <= 0)) {
+      setError('Add a PDF title and positive NGN and USD prices for the paid document.')
+      return
+    }
     const postSlug = slugify(blogDraft.title)
     if (!postSlug) {
       setError('Add a title that can be used to create a public link.')
@@ -2204,7 +2491,37 @@ function StudioEditorial() {
     setError('')
     setMessage('')
     let coverImageUrl = blogDraft.cover_image_url
+    let bodyContent = blogDraft.body.trim()
     let uploadedCoverPath = ''
+    let uploadedDocumentPath = ''
+    const uploadedInlinePaths = []
+    const pendingImageIds = [...bodyContent.matchAll(/pending-image:([a-f0-9-]+)/gi)].map((match) => match[1])
+    const pendingImageMap = new Map(inlineImages.map((image) => [image.id, image]))
+    if (pendingImageIds.some((id) => !pendingImageMap.has(id))) {
+      setSaving(false)
+      setError('An inserted image is missing from this draft. Remove its placeholder and add the image again.')
+      return
+    }
+    const usedInlineImages = [...new Set(pendingImageIds)].map((id) => pendingImageMap.get(id))
+    if (usedInlineImages.some((image) => !['image/jpeg', 'image/png', 'image/webp'].includes(image.file.type)
+      || image.file.size > 10 * 1024 * 1024)) {
+      setSaving(false)
+      setError('Inline images must be JPG, PNG, or WebP files smaller than 10 MB.')
+      return
+    }
+    async function cleanupNewUploads() {
+      const warnings = []
+      const removals = [
+        ['blog-covers', uploadedCoverPath ? [uploadedCoverPath] : [], 'uploaded cover image'],
+        ['blog-covers', uploadedInlinePaths, 'uploaded inline images'],
+        ['paid-blog-documents', uploadedDocumentPath ? [uploadedDocumentPath] : [], 'uploaded PDF'],
+      ].filter(([, paths]) => paths.length)
+      for (const [bucket, paths, label] of removals) {
+        const { error: cleanupError } = await supabase.storage.from(bucket).remove(paths)
+        if (cleanupError) warnings.push(`The ${label} could not be removed: ${cleanupError.message}`)
+      }
+      return warnings
+    }
     if (coverFile) {
       const extension = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }[coverFile.type]
       uploadedCoverPath = `${workspace.id}/${crypto.randomUUID()}.${extension}`
@@ -2215,10 +2532,54 @@ function StudioEditorial() {
       })
       if (uploadError) {
         setSaving(false)
-        setError(`Could not upload the cover image: ${uploadError.message}`)
+        setError(uploadError.message.includes('Bucket not found')
+          ? 'Could not upload the cover image: the blog-covers bucket is missing. Apply the latest Supabase migrations with `supabase db push`, then try again.'
+          : `Could not upload the cover image: ${uploadError.message}`)
         return
       }
       coverImageUrl = supabase.storage.from('blog-covers').getPublicUrl(uploadedCoverPath).data.publicUrl
+    }
+    if (documentFile) {
+      uploadedDocumentPath = `${workspace.id}/${crypto.randomUUID()}.pdf`
+      const { error: documentUploadError } = await supabase.storage.from('paid-blog-documents').upload(uploadedDocumentPath, documentFile, {
+        contentType: 'application/pdf',
+        cacheControl: '3600',
+        upsert: false,
+      })
+      if (documentUploadError) {
+        const cleanupWarnings = await cleanupNewUploads()
+        setSaving(false)
+        setError(documentUploadError.message.includes('Bucket not found')
+          ? `Could not upload the PDF: the paid-blog-documents bucket is missing. Apply the latest Supabase migrations with \`supabase db push\`, then try again.${cleanupWarnings.length ? ` ${cleanupWarnings.join(' ')}` : ''}`
+          : `Could not upload the PDF document: ${documentUploadError.message}.${cleanupWarnings.length ? ` ${cleanupWarnings.join(' ')}` : ''}`)
+        return
+      }
+    }
+    for (const image of usedInlineImages) {
+      const extension = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }[image.file.type]
+      const imagePath = `${workspace.id}/${crypto.randomUUID()}.${extension}`
+      const { error: imageUploadError } = await supabase.storage.from('blog-covers').upload(imagePath, image.file, {
+        contentType: image.file.type,
+        cacheControl: '3600',
+        upsert: false,
+      })
+      if (imageUploadError) {
+        const cleanupWarnings = await cleanupNewUploads()
+        setSaving(false)
+        setError(`Could not upload an inline article image: ${imageUploadError.message}.${cleanupWarnings.length ? ` ${cleanupWarnings.join(' ')}` : ''}`)
+        return
+      }
+      uploadedInlinePaths.push(imagePath)
+      const imageUrl = supabase.storage.from('blog-covers').getPublicUrl(imagePath).data.publicUrl
+      const altText = image.altText.replace(/[\r\n]/g, ' ').replaceAll('[', ' ').replaceAll(']', ' ').trim() || 'Blog image'
+      bodyContent = bodyContent.split(`![pending-image](pending-image:${image.id})`)
+        .join(`![${altText}](${imageUrl})`)
+    }
+    if (bodyContent.length > 30000) {
+      const cleanupWarnings = await cleanupNewUploads()
+      setSaving(false)
+      setError(`The article body exceeds 30,000 characters after adding image links. Shorten the article or use fewer images.${cleanupWarnings.length ? ` ${cleanupWarnings.join(' ')}` : ''}`)
+      return
     }
     const payload = {
       workspace_id: workspace.id,
@@ -2226,7 +2587,7 @@ function StudioEditorial() {
       title: blogDraft.title.trim(),
       slug: postSlug,
       excerpt: blogDraft.excerpt.trim(),
-      body: blogDraft.body.trim(),
+      body: bodyContent,
       cover_image_url: coverImageUrl,
       seo_title: blogDraft.seo_title.trim(),
       meta_description: blogDraft.meta_description.trim(),
@@ -2234,6 +2595,12 @@ function StudioEditorial() {
       storybrand_angle: {},
       alternate_hooks: [],
       visual_direction: '',
+      document_storage_path: documentFile
+        ? uploadedDocumentPath
+        : removeDocument ? null : blogDraft.document_storage_path || null,
+      document_title: keepsDocument ? documentTitle : null,
+      document_ngn_price: keepsDocument ? documentNgnPrice : null,
+      document_usd_price: keepsDocument ? documentUsdPrice : null,
       status,
       published_at: status === 'published' ? blogDraft.published_at || new Date().toISOString() : null,
     }
@@ -2242,25 +2609,30 @@ function StudioEditorial() {
       : await supabase.from('blog_posts').insert(payload).select('id').single()
     setSaving(false)
     if (result.error) {
-      if (uploadedCoverPath) {
-        const { error: cleanupError } = await supabase.storage.from('blog-covers').remove([uploadedCoverPath])
-        setError(cleanupError
-          ? `${result.error.message} The uploaded cover image could not be removed: ${cleanupError.message}`
-          : result.error.message)
-      } else {
-        setError(result.error.message)
-      }
+      const cleanupWarnings = await cleanupNewUploads()
+      setError(`${result.error.message}${cleanupWarnings.length ? ` ${cleanupWarnings.join(' ')}` : ''}`)
       return
     }
     let cleanupWarning = ''
     const oldCoverPath = getBlogCoverPath(blogDraft.cover_image_url, workspace.id)
-    if (oldCoverPath && oldCoverPath !== uploadedCoverPath) {
-      const { error: cleanupError } = await supabase.storage.from('blog-covers').remove([oldCoverPath])
-      if (cleanupError) cleanupWarning = ` The previous cover image could not be removed: ${cleanupError.message}`
+    const oldImagePaths = [...new Set([oldCoverPath, ...getBlogInlineImagePaths(blogDraft.body || '', workspace.id)].filter(Boolean))]
+    const newImagePaths = new Set([getBlogCoverPath(coverImageUrl, workspace.id), ...getBlogInlineImagePaths(bodyContent, workspace.id)].filter(Boolean))
+    const staleImagePaths = oldImagePaths.filter((path) => !newImagePaths.has(path))
+    if (staleImagePaths.length) {
+      const cleanupMessage = await removeBlogImagesIfUnused(staleImagePaths, result.data.id)
+      if (cleanupMessage) cleanupWarning = ` ${cleanupMessage}`
+    }
+    const oldDocumentPath = blogDraft.document_storage_path
+    if (oldDocumentPath && oldDocumentPath !== uploadedDocumentPath && (removeDocument || uploadedDocumentPath)) {
+      const cleanupMessage = await removeDocumentIfUnpurchased(oldDocumentPath)
+      if (cleanupMessage) cleanupWarning += ` ${cleanupMessage}`
     }
     setMessage(`${status === 'published' ? 'Blog post published on the public site.' : 'Blog draft saved for review.'}${cleanupWarning}`)
     setBlogDraft(null)
+    setInlineImages([])
     setCoverFile(null)
+    setDocumentFile(null)
+    setRemoveDocument(false)
     await refresh()
   }
 
@@ -2269,8 +2641,13 @@ function StudioEditorial() {
       ...post,
       keywords_text: (post.keywords || []).join(', '),
       alternates: post.alternate_hooks || [],
+      document_ngn_price: post.document_ngn_price == null ? '' : String(post.document_ngn_price),
+      document_usd_price: post.document_usd_price == null ? '' : String(post.document_usd_price),
     })
+    setInlineImages([])
     setCoverFile(null)
+    setDocumentFile(null)
+    setRemoveDocument(false)
     setEmailDraft(null)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -2281,18 +2658,22 @@ function StudioEditorial() {
       .eq('id', post.id).eq('workspace_id', workspace.id)
     if (deleteError) setError(deleteError.message)
     else {
-      const coverPath = getBlogCoverPath(post.cover_image_url, workspace.id)
+      const imagePaths = [...new Set([getBlogCoverPath(post.cover_image_url, workspace.id), ...getBlogInlineImagePaths(post.body || '', workspace.id)].filter(Boolean))]
       let cleanupWarning = ''
-      if (coverPath) {
-        const { error: coverDeleteError } = await supabase.storage.from('blog-covers').remove([coverPath])
-        if (coverDeleteError) cleanupWarning = ` The cover image could not be removed: ${coverDeleteError.message}`
+      if (imagePaths.length) cleanupWarning = await removeBlogImagesIfUnused(imagePaths, null)
+      if (post.document_storage_path) {
+        const cleanupMessage = await removeDocumentIfUnpurchased(post.document_storage_path)
+        if (cleanupMessage) cleanupWarning += ` ${cleanupMessage}`
       }
       if (blogDraft?.id === post.id) {
         setBlogDraft(null)
+        setInlineImages([])
         setCoverFile(null)
+        setDocumentFile(null)
+        setRemoveDocument(false)
       }
       await refresh()
-      if (cleanupWarning) setError(`The post was deleted.${cleanupWarning}`)
+      if (cleanupWarning) setError(`The post was deleted. ${cleanupWarning}`)
     }
   }
 
@@ -2322,7 +2703,7 @@ function StudioEditorial() {
     })
     setSending(false)
     if (sendError || data?.error) {
-      setError(data?.error || sendError?.message || 'Could not send this newsletter.')
+      setError(data?.error || await edgeFunctionError(sendError, 'Could not send this newsletter.'))
       return
     }
     setMessage(`Resend accepted the newsletter for ${data.recipient_count} confirmed subscribers. Check Resend for delivery or bounce status.`)
@@ -2355,11 +2736,34 @@ function StudioEditorial() {
       </section>
     </div>
     {blogDraft && <section className="editorial-draft">
-      <div className="studio-section-heading"><div><p className="kicker">{blogDraft.id ? 'EDIT BLOG POST' : 'NEW BLOG POST'}</p><h2>Add your content.</h2></div><button className="icon-button" aria-label="Close blog draft" onClick={() => { setBlogDraft(null); setCoverFile(null) }}><X size={17} /></button></div>
+      <div className="studio-section-heading"><div><p className="kicker">{blogDraft.id ? 'EDIT BLOG POST' : 'NEW BLOG POST'}</p><h2>Add your content.</h2></div><button className="icon-button" aria-label="Close blog draft" onClick={() => { setBlogDraft(null); setInlineImages([]); setCoverFile(null); setDocumentFile(null); setRemoveDocument(false) }}><X size={17} /></button></div>
       <label>Title<input required maxLength="180" value={blogDraft.title} onChange={(event) => editBlogDraft('title', event.target.value)} /></label>
       <label>Excerpt<textarea rows="2" maxLength="400" value={blogDraft.excerpt} onChange={(event) => editBlogDraft('excerpt', event.target.value)} /></label>
       <div className="editorial-cover-picker"><label>Cover image<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setCoverFile(event.target.files?.[0] || null)} /><small className="muted-copy">Add your own JPG, PNG, or WebP image (up to 10 MB). A cover image is required to publish.</small></label>{(coverPreview || blogDraft.cover_image_url) && <img src={coverPreview || blogDraft.cover_image_url} alt="Preview of the blog cover image" />}</div>
-      <label>Article body<textarea required className="editorial-body-input" rows="24" maxLength="30000" value={blogDraft.body} onChange={(event) => editBlogDraft('body', event.target.value)} /></label>
+      <section className="editorial-document-editor"><p className="kicker">OPTIONAL PAID PDF DOWNLOAD</p>
+        {blogDraft.document_storage_path && !removeDocument && !documentFile && <p className="muted-copy">Current PDF: {blogDraft.document_title} <button type="button" className="quiet-link" onClick={() => setRemoveDocument(true)}>Remove PDF</button></p>}
+        {removeDocument && <p className="muted-copy">The current PDF will be removed when you save. <button type="button" className="quiet-link" onClick={() => setRemoveDocument(false)}>Keep PDF</button></p>}
+        <label>Upload a PDF<input type="file" accept="application/pdf,.pdf" onChange={(event) => { setDocumentFile(event.target.files?.[0] || null); if (event.target.files?.[0]) setRemoveDocument(false) }} /><small className="muted-copy">Optional. PDF only, up to 25 MB. Visitors receive a private download link only after payment.</small></label>
+        {documentFile && <p className="muted-copy">New PDF selected: {documentFile.name} · {(documentFile.size / (1024 * 1024)).toFixed(1)} MB</p>}
+        {(blogDraft.document_storage_path && !removeDocument || documentFile) && <>
+          <label>Document title<input required maxLength="180" value={blogDraft.document_title || documentFile?.name || ''} onChange={(event) => editBlogDraft('document_title', event.target.value)} /></label>
+          <div className="editorial-document-prices">
+            <label>Price in NGN<input required type="number" min="0.01" step="0.01" value={blogDraft.document_ngn_price || ''} onChange={(event) => editBlogDraft('document_ngn_price', event.target.value)} /></label>
+            <label>Price in USD<input required type="number" min="0.01" step="0.01" value={blogDraft.document_usd_price || ''} onChange={(event) => editBlogDraft('document_usd_price', event.target.value)} /></label>
+          </div>
+        </>}
+      </section>
+      <section className="editorial-inline-images">
+        <div><p className="kicker">ADD IMAGES INSIDE YOUR ARTICLE</p><p>Choose an image, describe it for accessibility, then place it at the text cursor. Images appear between paragraphs after saving.</p></div>
+        <label className="button button-soft">Choose images<input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={addInlineImages} /></label>
+        {inlineImages.map((image) => <div className="editorial-inline-image-row" key={image.id}>
+          <div><b>{image.file.name}</b><small>{(image.file.size / (1024 * 1024)).toFixed(1)} MB</small></div>
+          <label>Image description<input value={image.altText} maxLength="180" onChange={(event) => setInlineImages((current) => current.map((item) => item.id === image.id ? { ...item, altText: event.target.value } : item))} /></label>
+          <button type="button" className="button button-soft" onClick={() => insertInlineImage(image.id)}>Insert at cursor</button>
+          <button type="button" className="quiet-link" onClick={() => removeInlineImage(image.id)}>Remove</button>
+        </div>)}
+      </section>
+      <label>Article body<textarea ref={bodyTextareaRef} required className="editorial-body-input" rows="24" maxLength="30000" value={blogDraft.body} onChange={(event) => editBlogDraft('body', event.target.value)} /></label>
       <div className="editorial-seo-fields"><label>SEO title<input maxLength="180" value={blogDraft.seo_title} onChange={(event) => editBlogDraft('seo_title', event.target.value)} /></label><label>Meta description · {blogDraft.meta_description?.length || 0}/155<input maxLength="155" value={blogDraft.meta_description} onChange={(event) => editBlogDraft('meta_description', event.target.value)} /></label><label>Suggested keywords<input value={blogDraft.keywords_text} onChange={(event) => editBlogDraft('keywords_text', event.target.value)} /></label></div>
       <div className="editorial-draft-actions"><button className="button button-soft" disabled={saving} onClick={() => saveBlog('draft')}>{saving ? 'Saving…' : 'Save as draft'}</button><button className="button button-dark" disabled={saving || !blogDraft.title.trim() || !blogDraft.body.trim() || (!coverFile && !blogDraft.cover_image_url)} onClick={() => saveBlog('published')}>{saving ? 'Publishing…' : blogDraft.status === 'published' ? 'Update published post' : 'Publish post'} <ArrowRight size={15} /></button></div>
     </section>}
@@ -2374,6 +2778,18 @@ function StudioEditorial() {
     <section className="editorial-posts">
       <div className="studio-section-heading"><div><p className="kicker">REVIEW BEFORE IT GOES LIVE</p><h2>Blog drafts and posts</h2></div><Link className="quiet-link" to="/blog">Public blog <ArrowRight size={15} /></Link></div>
       {posts === null ? <p className="loading-copy">Loading editorial workspace…</p> : posts.length ? <div className="editorial-post-list">{posts.map((post) => <article key={post.id}><img src={blogCover(post, 0)} alt="" /><div><b>{post.title}</b><span>{post.status === 'published' ? `Published ${post.published_at ? new Date(post.published_at).toLocaleDateString() : ''}` : 'Draft for review'}</span><p>{post.excerpt}</p></div><button className="button button-soft" onClick={() => editSavedPost(post)}>Edit</button><button className="button button-danger" onClick={() => deleteBlogPost(post)} aria-label={`Delete ${post.title}`}><Trash2 size={15} /></button></article>)}</div> : <div className="studio-empty"><BookOpen /><h3>Your first story starts with you.</h3><p>Write a post above, add your cover image, then publish when it is ready.</p></div>}
+    </section>
+    <section className="editorial-purchases">
+      <div className="studio-section-heading"><div><p className="kicker">PAID BOOKINGS</p><h2>Consultation requests</h2></div></div>
+      <p className="muted-copy">Requests appear here after Bachs confirms payment. Contact each client to confirm their requested Africa/Lagos appointment time.</p>
+      {purchases.length ? <div className="editorial-purchase-list">{purchases.map((purchase) => {
+        const appointment = purchase.requested_at ? new Date(`${purchase.requested_at}+01:00`) : null
+        return <article key={purchase.id}>
+          <div><b>{purchase.customer_name || 'New client'}</b><a href={`mailto:${purchase.customer_email}`}>{purchase.customer_email}</a></div>
+          <div><b>{purchase.product_title}</b><span>{appointment ? `${new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Africa/Lagos' }).format(appointment)} · Africa/Lagos` : 'Date not provided'}</span></div>
+          <div><b>{purchase.currency} {Number(purchase.amount).toFixed(2)}</b><span>{purchase.status === 'paid' ? `Paid · ${purchase.receipt_number}` : 'Awaiting payment'}</span></div>
+        </article>
+      })}</div> : <div className="studio-empty"><CalendarDays /><h3>No consultation requests yet.</h3><p>Paid bookings from your blog posts will appear here.</p></div>}
     </section>
   </main>
 }
@@ -3445,6 +3861,110 @@ function PrintableInvoice({ invoice, studioName, studioEmail, onClose }) {
   </div>
 }
 
+function PublicEditorialPurchase() {
+  const { token } = useParams()
+  const [purchase, setPurchase] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [checkingPayment, setCheckingPayment] = useState(new URLSearchParams(window.location.search).get('payment') === 'returned')
+  const [autoDownloadAttempted, setAutoDownloadAttempted] = useState(false)
+
+  const refreshPurchase = useCallback(async () => {
+    if (!supabase) {
+      setError(supabaseConfigMessage)
+      setLoading(false)
+      return null
+    }
+    const { data, error: requestError } = await supabase.functions.invoke('editorial-checkout', {
+      body: { action: 'details', token },
+    })
+    if (requestError) {
+      setError(await edgeFunctionError(requestError, 'Could not load this purchase receipt.'))
+      setLoading(false)
+      return null
+    }
+    if (data?.error || !data?.purchase) {
+      setError(data?.error || 'This purchase receipt is unavailable.')
+      setLoading(false)
+      return null
+    }
+    setPurchase(data.purchase)
+    setError('')
+    setLoading(false)
+    return data.purchase
+  }, [token])
+
+  useEffect(() => {
+    let active = true
+    let interval
+    let attempts = 0
+    const returnedFromCheckout = new URLSearchParams(window.location.search).get('payment') === 'returned'
+    async function load() {
+      const current = await refreshPurchase()
+      if (active && returnedFromCheckout && current?.status !== 'paid') {
+        interval = window.setInterval(async () => {
+          attempts += 1
+          const updated = await refreshPurchase()
+          if (updated?.status === 'paid' || attempts >= 20) {
+            window.clearInterval(interval)
+            setCheckingPayment(false)
+          }
+        }, 3000)
+      } else {
+        setCheckingPayment(false)
+      }
+    }
+    load()
+    return () => {
+      active = false
+      window.clearInterval(interval)
+    }
+  }, [refreshPurchase])
+
+  useEffect(() => {
+    const returnedFromCheckout = new URLSearchParams(window.location.search).get('payment') === 'returned'
+    if (!returnedFromCheckout || checkingPayment || autoDownloadAttempted
+      || purchase?.status !== 'paid' || purchase.purchase_type !== 'document' || !purchase.download_url) return
+    setAutoDownloadAttempted(true)
+    const download = document.createElement('a')
+    download.href = purchase.download_url
+    download.download = ''
+    download.rel = 'noreferrer'
+    document.body.appendChild(download)
+    download.click()
+    download.remove()
+  }, [autoDownloadAttempted, checkingPayment, purchase])
+
+  const requestedDate = purchase?.requested_at
+    ? new Date(`${purchase.requested_at}+01:00`)
+    : null
+  return <div className="public-site marketing-site"><SiteNav /><main className="wrap editorial-purchase-page">
+    {loading ? <p className="loading-copy">Loading your secure receipt…</p> : error && !purchase
+      ? <div className="studio-empty"><FileText /><h1>Receipt unavailable</h1><p>{error}</p></div>
+      : purchase && <article className="editorial-receipt">
+        <p className="kicker">{purchase.studio_name} / PAYMENT</p>
+        <h1>{purchase.status === 'paid' ? 'Payment confirmed.' : 'Your checkout is in progress.'}</h1>
+        {checkingPayment && <p className="muted-copy">Waiting for Bachs to confirm payment. This page will update automatically.</p>}
+        {!checkingPayment && purchase.status !== 'paid' && <p className="muted-copy">Payment has not been confirmed yet. Refresh this page after completing checkout.</p>}
+        <dl>
+          <div><dt>Item</dt><dd>{purchase.product_title}</dd></div>
+          <div><dt>Amount</dt><dd>{purchase.currency} {Number(purchase.amount).toFixed(2)}</dd></div>
+          {purchase.status === 'paid' && <div><dt>Receipt</dt><dd>{purchase.receipt_number}</dd></div>}
+          {purchase.status === 'paid' && <div><dt>Paid</dt><dd>{purchase.paid_at ? new Date(purchase.paid_at).toLocaleString() : ''}</dd></div>}
+          {purchase.purchase_type === 'consultation' && requestedDate && <div><dt>Requested appointment</dt><dd>{new Intl.DateTimeFormat(undefined, { dateStyle: 'long', timeStyle: 'short', timeZone: 'Africa/Lagos' }).format(requestedDate)} · Africa/Lagos</dd></div>}
+        </dl>
+        {purchase.status === 'paid' && purchase.purchase_type === 'consultation' && <p className="notice-success">Your consultation request has been sent to the studio. They’ll contact you at {purchase.customer_email} to confirm the appointment.</p>}
+        {purchase.status === 'paid' && purchase.purchase_type === 'document' && (purchase.download_url
+          ? <><p className="notice-success">Your secure download is ready. It should begin automatically.</p><a className="button button-dark" href={purchase.download_url} download><Download size={16} /> Download your PDF</a></>
+          : <p className="notice-error">The secure download is not available right now. Refresh the page to request a new download link.</p>)}
+        {purchase.status === 'paid' && <button className="button button-soft" onClick={() => window.print()}>Print receipt</button>}
+        {error && <p className="notice-error">{error}</p>}
+        <button className="button button-outline" onClick={refreshPurchase}>Refresh receipt / secure download</button>
+        <Link className="quiet-link" to="/blog">Back to the blog <ArrowRight size={15} /></Link>
+      </article>}
+  </main><SiteFooter /></div>
+}
+
 function PublicInvoiceCheckout() {
   const { token } = useParams()
   const [invoice, setInvoice] = useState(null)
@@ -4165,6 +4685,7 @@ function App() {
     <Route path="/sign-in" element={<AuthPage />} />
     <Route path="/create-account" element={<AuthPage signup />} />
     <Route path="/pay/:token" element={<PublicInvoiceCheckout />} />
+    <Route path="/purchase/:token" element={<PublicEditorialPurchase />} />
     <Route path="/studio/*" element={<ProtectedRoute><StudioAccessRoute /></ProtectedRoute>} />
     <Route path="/portal" element={<ProtectedRoute><ClientPortal /></ProtectedRoute>} />
     <Route path="/portal/project/:id" element={<ProtectedRoute><ClientProject /></ProtectedRoute>} />

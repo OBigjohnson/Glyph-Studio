@@ -39,9 +39,11 @@ The existing bank-transfer option remains available: the studio verifies the
 transfer and records only the amount actually received. Manual payments also
 update the cumulative balance and cannot exceed it.
 
-The app creates both receipt views in GLYPH; it does not email receipts or
-send messages on the studio's behalf. Share the checkout URL before payment
-and the same URL remains the client's receipt page afterward.
+Invoice receipts are available in GLYPH but are not emailed; share the invoice
+checkout URL before payment and it remains the client's receipt page afterward.
+Paid blog consultations and documents use the separate editorial purchase flow:
+after a verified webhook, GLYPH emails the buyer's receipt and consultation
+requests to the studio contact email. See [setup.md](./setup.md#paid-blog-consultations-and-documents).
 
 ## Server-side boundaries
 
@@ -67,6 +69,10 @@ and the same URL remains the client's receipt page afterward.
 - Checkout reservations are tied to a single invoice and expected amount.
   Public invoice links are random UUID capabilities; never publish them for
   invoices that should remain private.
+- Editorial consultations and paid blog PDFs use a separate purchase record and
+  the same signed Bachs webhook. A success redirect alone never marks one as
+  paid; the webhook must match the checkout amount and currency before issuing
+  a receipt, notifying the studio, or allowing a private PDF download.
 - Never put Bachs API keys, webhook secrets, Supabase `service_role` keys, or
   checkout credentials in `VITE_*` variables, browser code, or source control.
 

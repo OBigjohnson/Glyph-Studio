@@ -29,14 +29,22 @@ function htmlEscape(value: string) {
   })[character] || character)
 }
 
-function emailHtml(body: string, unsubscribeUrl: string, previewText: string) {
+function emailHtml(
+  body: string,
+  unsubscribeUrl: string,
+  previewText: string,
+  blogPosts: { title: string; consultationUrl: string; documentUrl: string | null }[],
+) {
   const paragraphs = body.split(/\n{2,}/).map((paragraph) => (
     `<p style="margin:0 0 18px;line-height:1.7">${htmlEscape(paragraph).replace(/\n/g, '<br>')}</p>`
   )).join('')
   const preheader = previewText
     ? `<span style="display:none!important;visibility:hidden;opacity:0;color:transparent;height:0;width:0;overflow:hidden">${htmlEscape(previewText)}</span>`
     : ''
-  return `${preheader}<div style="font-family:Arial,sans-serif;color:#211d2b;max-width:620px;margin:0 auto;padding:32px 20px">${paragraphs}<hr style="border:0;border-top:1px solid #e8e5ee;margin:32px 0 16px"><p style="font-size:12px;color:#777">You received this because you subscribed to GLYPH Studio updates. <a href="${htmlEscape(unsubscribeUrl)}">Unsubscribe</a></p></div>`
+  const blogLinks = blogPosts.length
+    ? `<section style="margin:28px 0;padding:20px;background:#f4f6fb;border-radius:10px"><h2 style="font-size:18px;margin:0 0 12px">Explore the latest from the blog</h2>${blogPosts.map((post) => `<p style="margin:0 0 10px"><b>${htmlEscape(post.title)}</b><br><a href="${htmlEscape(post.consultationUrl)}" style="color:#2946d8">Book a consultation</a>${post.documentUrl ? ` · <a href="${htmlEscape(post.documentUrl)}" style="color:#2946d8">Get the paid guide</a>` : ''}</p>`).join('')}</section>`
+    : ''
+  return `${preheader}<div style="font-family:Arial,sans-serif;color:#211d2b;max-width:620px;margin:0 auto;padding:32px 20px">${paragraphs}${blogLinks}<hr style="border:0;border-top:1px solid #e8e5ee;margin:32px 0 16px"><p style="font-size:12px;color:#777">You received this because you subscribed to GLYPH Studio updates. <a href="${htmlEscape(unsubscribeUrl)}">Unsubscribe</a></p></div>`
 }
 
 Deno.serve(async (request) => {
@@ -194,14 +202,31 @@ Deno.serve(async (request) => {
 
     const appUrl = requiredEnv('PUBLIC_APP_URL').replace(/\/+$/, '')
     const from = requiredEnv('NEWSLETTER_FROM')
+    const { data: publishedPosts, error: postError } = await supabase.from('blog_posts')
+      .select('title, slug, document_title')
+      .eq('workspace_id', membership.workspace_id)
+      .eq('status', 'published')
+      .order('published_at', { ascending: false })
+      .limit(5)
+    if (postError) throw new Error(`Could not load published blog links for the newsletter: ${postError.message}`)
+    const blogLinks = (publishedPosts || []).map((post) => ({
+      title: post.title,
+      consultationUrl: `${appUrl}/blog/${encodeURIComponent(post.slug)}#consultation`,
+      documentUrl: post.document_title
+        ? `${appUrl}/blog/${encodeURIComponent(post.slug)}#paid-document`
+        : null,
+    }))
     const emails = subscribers.map((subscriber) => {
       const unsubscribeUrl = `${appUrl}/newsletter/unsubscribe?token=${encodeURIComponent(subscriber.unsubscribe_token)}`
+      const blogText = blogLinks.length
+        ? `\n\nLatest from the blog:\n${blogLinks.map((post) => `${post.title} — book a consultation: ${post.consultationUrl}${post.documentUrl ? `\nGet the paid guide: ${post.documentUrl}` : ''}`).join('\n')}`
+        : ''
       return {
         from,
         to: [subscriber.email],
         subject,
-        text: `${content}\n\nUnsubscribe: ${unsubscribeUrl}`,
-        html: emailHtml(content, unsubscribeUrl, previewText),
+        text: `${content}${blogText}\n\nUnsubscribe: ${unsubscribeUrl}`,
+        html: emailHtml(content, unsubscribeUrl, previewText, blogLinks),
         headers: {
           'List-Unsubscribe': `<${unsubscribeUrl}>`,
         },

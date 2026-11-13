@@ -130,6 +130,66 @@ written by you. The `newsletter` Edge Function handles signup and delivery.
    Resend acceptance means the provider accepted the message, not that it
    reached the inbox; check Resend for delivery and bounce status.
 
+The signup function needs `RESEND_API_KEY`, `NEWSLETTER_FROM`, and
+`PUBLIC_APP_URL`. If signup fails, the form now shows the Edge Function's
+response; missing secrets, an unverified sender, and provider rejections must
+be corrected in Supabase/Resend. No email system can guarantee inbox placement.
+Use a verified sending domain with its exact SPF and DKIM records and a
+DMARC policy, send only to opted-in readers, and monitor delivery, bounces,
+complaints, and unsubscribe requests in Resend.
+
+## Paid blog consultations and documents
+
+The `20261113150000_paid_blog_offers.sql` migration adds a private
+`paid-blog-documents` bucket, per-post PDF pricing, purchase receipts, and
+workspace-protected consultation requests. The existing
+`20261113130000_manual_blog_covers.sql` migration creates the public
+`blog-covers` bucket. If an upload reports **Bucket not found**, apply the
+migrations to the Supabase project used by the deployed site:
+
+```bash
+supabase db push
+```
+
+In Supabase Storage, confirm that `blog-covers` exists and is public, and
+`paid-blog-documents` exists and is private. Do not make the paid-document
+bucket public.
+
+Deploy the checkout function and the updated signed-payment webhook:
+
+```bash
+supabase functions deploy editorial-checkout
+supabase functions deploy bachs-webhook
+```
+
+The checkout uses the existing Bachs secrets (`BACHS_MODE`, `BACHS_API_KEY`,
+`BACHS_ORGANIZATION_ID`, and `PUBLIC_APP_URL`) and the existing signed
+`collection.succeeded` webhook. Keep the webhook URL and Bachs organization
+configuration described in [Bachs invoice checkout](#bachs-invoice-checkout).
+Confirm that the Bachs merchant account supports both NGN and USD checkout,
+and test both currencies in a separate sandbox project before accepting live
+payments. The displayed USD rates are the approximate amounts supplied for
+the consultation menu; GLYPH charges the selected listed currency and does
+not calculate a live exchange rate.
+
+Purchase receipts and consultation-request notifications use the same verified
+Resend sender configured for the newsletter. Set the studio contact email in
+**Studio → Settings**; paid consultation requests are emailed there and appear
+in **Studio → Blog & email → Consultation requests** after Bachs confirms
+payment. Buyers must enter an email to receive their receipt and, for PDF
+purchases, a secure download link. The download is also available on the
+purchase receipt page after confirmation.
+
+Consultation requests collect the buyer's preferred date and time in
+Africa/Lagos time. GLYPH does not check calendar availability or automatically
+book a meeting; contact the buyer to confirm the requested slot. The blog
+editor includes the supplied duration and specialist rate menu. Each optional
+PDF has separate NGN and USD prices configured while editing its blog post.
+The newsletter automatically includes links to the five latest published
+posts, where readers can book a consultation or buy an attached PDF.
+Individual post pages include copy-link and Facebook, LinkedIn, X, and WhatsApp
+sharing links.
+
 If this project previously deployed AI editorial functions or scheduled daily
 blog generation, remove those old remote resources once:
 

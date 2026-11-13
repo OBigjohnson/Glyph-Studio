@@ -70,8 +70,11 @@ The public `/blog` page lists only published posts. The private Studio
 **Blog & email** workspace lets the studio write blog titles, article bodies,
 and newsletter subject lines and body copy directly. Blog cover images are
 uploaded by the studio to a public storage bucket; publishing requires a cover
-image. Posts can be saved as drafts and published manually. No AI-generated
-blog or newsletter copy, or scheduled blog drafts, are used.
+image. Additional JPG, PNG, or WebP images can be uploaded in the article
+editor and inserted between paragraphs at the text cursor; add a short image
+description for accessibility. Posts can be saved as drafts and published
+manually. No AI-generated blog or newsletter copy, or scheduled blog drafts,
+are used.
 
 The public mailing-list form uses double opt-in. Only confirmed subscribers
 receive campaigns, and each message includes an unsubscribe link. Sending uses
@@ -79,8 +82,22 @@ Resend from `hello@glyphstudio.cv`; Resend must verify `glyphstudio.cv` and its
 DNS records before mail can be delivered. The sender and provider credentials
 stay in Supabase Function secrets. Studio sends are manual, require
 confirmation, and are limited to 100 recipients per campaign in this first
-version. Resend acceptance is recorded separately from final delivery/bounce
-status.
+version. Campaign emails include links to the five latest published posts;
+each post contains consultation booking and optional paid-document links.
+Resend acceptance is recorded separately from final delivery/bounce status.
+
+Published posts can offer the GLYPH consultation menu in NGN or USD and an
+optional paid PDF with both prices set by the studio. Bachs checkout links
+collect the buyer's email, and consultation checkouts also collect the
+requested Africa/Lagos appointment time. Only a signed successful-payment
+webhook issues a receipt, sends the consultation request to the studio contact
+email, and unlocks a time-limited PDF download. Requests are visible in Studio
+under **Blog & email**. The requested time is not a confirmed calendar booking;
+the studio follows up with the buyer to confirm.
+
+Every article page also offers direct sharing links for Facebook, LinkedIn, X,
+and WhatsApp, as well as a copy-link action. These links open the selected
+service; GLYPH does not publish on the studio's social accounts.
 
 Apply the migrations and deploy the newsletter Edge Function as described in
 [`setup.md`](./setup.md#storybrand-blog-and-newsletter). Configure
