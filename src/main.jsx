@@ -31,6 +31,14 @@ function appPath(path) {
   return `${appBasePath}${path.startsWith('/') ? path : `/${path}`}`
 }
 
+function publicAppUrl(path) {
+  const configuredUrl = import.meta.env.VITE_SITE_URL || import.meta.env.VITE_APP_URL || window.location.origin
+  const siteBase = configuredUrl.replace(/\/+$/, '')
+  const appBase = import.meta.env.BASE_URL.replace(/\/$/, '')
+  const publicBase = appBase && !siteBase.endsWith(appBase) ? `${siteBase}${appBase}` : siteBase
+  return `${publicBase}${path.startsWith('/') ? path : `/${path}`}`
+}
+
 function publicAsset(path) {
   return `${import.meta.env.BASE_URL}${path.replace(/^\/+/, '')}`
 }
@@ -407,7 +415,7 @@ function ConsultationBooking({ post }) {
       await requestEditorialCheckout({
         action: 'checkout',
         purchase_type: 'consultation',
-        post_slug: post.slug,
+        ...(post?.slug ? { post_slug: post.slug } : {}),
         service_key: serviceKey,
         currency,
         name: String(form.get('name') || '').trim(),
@@ -441,6 +449,49 @@ function ConsultationBooking({ post }) {
     </ul>
     <p className="muted-copy">USD prices are approximate equivalents and may be affected by exchange rates and payment fees.</p>
   </section>
+}
+
+function StandaloneConsultationPage() {
+  const { studio, error: studioError } = usePublicStudio()
+  const [post, setPost] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let active = true
+    if (!supabase || studioError) {
+      setError(studioError || supabaseConfigMessage)
+      setLoading(false)
+      return () => { active = false }
+    }
+    if (!studio?.workspace_id) {
+      return () => { active = false }
+    }
+    supabase.from('blog_posts')
+      .select('slug')
+      .eq('workspace_id', studio.workspace_id)
+      .eq('status', 'published')
+      .order('published_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data, error: queryError }) => {
+        if (!active) return
+        if (queryError) setError(queryError.message)
+        else if (!data) setError('Consultation booking is temporarily unavailable.')
+        else setPost(data)
+        setLoading(false)
+      })
+    return () => { active = false }
+  }, [studio?.workspace_id, studioError])
+
+  return <div className="public-site marketing-site"><SiteNav /><main className="wrap editorial-standalone-page">
+    <p className="kicker">{studio?.studio_name || 'GLYPH STUDIO'} / CONSULTATION</p>
+    <h1>Thoughtful direction for your next step.</h1>
+    <p>Choose a session, set a time that works for you, and get clear guidance from the studio.</p>
+    {loading ? <p className="loading-copy">Loading consultation options…</p> : error
+      ? <p className="notice-error" role="alert">{error}</p>
+      : <ConsultationBooking post={post} />}
+  </main><SiteFooter /></div>
 }
 
 function PaidDocumentOffer({ post }) {
@@ -480,6 +531,57 @@ function PaidDocumentOffer({ post }) {
     </form>
     <p className="muted-copy">The secure download is available after the payment gateway confirms your payment.</p>
   </section>
+}
+
+function SharedPaidDocumentPage() {
+  const { postId } = useParams()
+  const { studio, error: studioError } = usePublicStudio()
+  const [post, setPost] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    setError('')
+    setPost(null)
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(postId || '')) {
+      setError('This paid guide link is invalid.')
+      setLoading(false)
+      return () => { active = false }
+    }
+    if (!supabase || studioError) {
+      setError(studioError || supabaseConfigMessage)
+      setLoading(false)
+      return () => { active = false }
+    }
+    if (!studio?.workspace_id) {
+      return () => { active = false }
+    }
+    supabase.from('blog_posts')
+      .select('id, title, slug, document_title, document_ngn_price, document_usd_price')
+      .eq('workspace_id', studio.workspace_id)
+      .eq('id', postId)
+      .eq('status', 'published')
+      .maybeSingle()
+      .then(({ data, error: queryError }) => {
+        if (!active) return
+        if (queryError) setError(queryError.message)
+        else if (!data?.document_title) setError('This paid guide is no longer available.')
+        else setPost(data)
+        setLoading(false)
+      })
+    return () => { active = false }
+  }, [postId, studio?.workspace_id, studioError])
+
+  return <div className="public-site marketing-site"><SiteNav /><main className="wrap editorial-standalone-page">
+    <p className="kicker">{studio?.studio_name || 'GLYPH STUDIO'} / PAID GUIDE</p>
+    <h1>{post?.document_title || 'Get the guide.'}</h1>
+    <p>Pay securely to receive a private download link for this guide.</p>
+    {loading ? <p className="loading-copy">Loading the guide…</p> : error
+      ? <p className="notice-error" role="alert">{error}</p>
+      : <PaidDocumentOffer post={post} />}
+  </main><SiteFooter /></div>
 }
 
 function BlogShareActions({ post }) {
@@ -2336,6 +2438,7 @@ function StudioEditorial() {
   const [subscribers, setSubscribers] = useState([])
   const [campaigns, setCampaigns] = useState([])
   const [purchases, setPurchases] = useState([])
+  const [copiedShareLink, setCopiedShareLink] = useState('')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [saving, setSaving] = useState(false)
@@ -2348,6 +2451,17 @@ function StudioEditorial() {
   const [removeDocument, setRemoveDocument] = useState(false)
   const [emailDraft, setEmailDraft] = useState(null)
   const bodyTextareaRef = useRef(null)
+
+  async function copyShareLink(path, key, label) {
+    const url = publicAppUrl(path)
+    try {
+      await navigator.clipboard.writeText(url)
+      setCopiedShareLink(key)
+      window.setTimeout(() => setCopiedShareLink(''), 1800)
+    } catch {
+      window.prompt(`Copy ${label} link:`, url)
+    }
+  }
 
   const refresh = useCallback(async () => {
     if (!supabase || !workspace?.id) return
@@ -2771,6 +2885,10 @@ function StudioEditorial() {
   return <main className="studio-page studio-editorial">
     <StudioPageHeader kicker="YOUR STUDIO / EDITORIAL" title="Your words, your story." action={<Link className="button button-outline" to="/blog">View the public blog <ExternalLink size={15} /></Link>} />
     <p className="editorial-intro">Write your own blog posts and newsletter emails, then review before publishing or sending.</p>
+    <section className="editorial-share-card">
+      <div><p className="kicker">STANDALONE BOOKING</p><b>Share a consultation page</b><p>Send this link in a newsletter or message. The booking form also appears on every published blog post.</p></div>
+      <button className="button button-soft" onClick={() => copyShareLink('/consultation', 'consultation', 'consultation')}><Copy size={14} />{copiedShareLink === 'consultation' ? 'Link copied' : 'Copy consultation link'}</button>
+    </section>
     {!isSupabaseConfigured && <p className="notice-error">{supabaseConfigMessage}</p>}
     {error && <p className="notice-error">{error}</p>}
     {message && <p className="notice-success">{message}</p>}
@@ -2832,7 +2950,7 @@ function StudioEditorial() {
     </section>}
     <section className="editorial-posts">
       <div className="studio-section-heading"><div><p className="kicker">REVIEW BEFORE IT GOES LIVE</p><h2>Blog drafts and posts</h2></div><Link className="quiet-link" to="/blog">Public blog <ArrowRight size={15} /></Link></div>
-      {posts === null ? <p className="loading-copy">Loading editorial workspace…</p> : posts.length ? <div className="editorial-post-list">{posts.map((post) => <article key={post.id}><img src={blogCover(post, 0)} alt="" /><div><b>{post.title}</b><span>{post.status === 'published' ? `Published ${post.published_at ? new Date(post.published_at).toLocaleDateString() : ''}` : 'Draft for review'}</span><p>{post.excerpt}</p></div><button className="button button-soft" onClick={() => editSavedPost(post)}>Edit</button><button className="button button-danger" onClick={() => deleteBlogPost(post)} aria-label={`Delete ${post.title}`}><Trash2 size={15} /></button></article>)}</div> : <div className="studio-empty"><BookOpen /><h3>Your first story starts with you.</h3><p>Write a post above, add your cover image, then publish when it is ready.</p></div>}
+      {posts === null ? <p className="loading-copy">Loading editorial workspace…</p> : posts.length ? <div className="editorial-post-list">{posts.map((post) => <article key={post.id}><img src={blogCover(post, 0)} alt="" /><div><b>{post.title}</b><span>{post.status === 'published' ? `Published ${post.published_at ? new Date(post.published_at).toLocaleDateString() : ''}` : 'Draft for review'}</span><p>{post.excerpt}</p></div>{post.status === 'published' && post.document_title && <button className="button button-soft" onClick={() => copyShareLink(`/guide/${post.id}`, `guide-${post.id}`, 'paid guide')}><Copy size={14} />{copiedShareLink === `guide-${post.id}` ? 'Link copied' : 'Copy PDF link'}</button>}<button className="button button-soft" onClick={() => editSavedPost(post)}>Edit</button><button className="button button-danger" onClick={() => deleteBlogPost(post)} aria-label={`Delete ${post.title}`}><Trash2 size={15} /></button></article>)}</div> : <div className="studio-empty"><BookOpen /><h3>Your first story starts with you.</h3><p>Write a post above, add your cover image, then publish when it is ready.</p></div>}
     </section>
     <section className="editorial-purchases">
       <div className="studio-section-heading"><div><p className="kicker">PAID BOOKINGS</p><h2>Consultation requests</h2></div></div>
@@ -4734,6 +4852,8 @@ function App() {
     <Route path="/portfolio/:slug" element={<PortfolioDetail />} />
     <Route path="/blog" element={<BlogPage />} />
     <Route path="/blog/:slug" element={<BlogPage />} />
+    <Route path="/consultation" element={<StandaloneConsultationPage />} />
+    <Route path="/guide/:postId" element={<SharedPaidDocumentPage />} />
     <Route path="/newsletter/confirm" element={<NewsletterAction />} />
     <Route path="/newsletter/unsubscribe" element={<NewsletterAction />} />
     <Route path="/contact" element={<Contact />} />
