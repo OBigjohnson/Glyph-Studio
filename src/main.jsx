@@ -193,17 +193,18 @@ function useUnreadProjectMessages(userId, reportError) {
 
 function Brand({ light = false }) {
   const { studio } = usePublicStudio()
-  return <Link to="/" className={`brand ${light ? 'brand-light' : ''}`}><img src={publicAsset('assets/glyph-logo.jpg')} alt="" /><span>{studio?.studio_name || 'GLYPH'}<small>{studio?.tagline || 'CREATIVE STUDIO'}</small></span></Link>
+  const name = studio?.studio_name?.replace(/\s+Creative Studio$/i, '') || 'GLYPH'
+  return <Link to="/" className={`brand ${light ? 'brand-light' : ''}`}><span>{name}<small>{studio?.tagline || 'CREATIVE STUDIO'}</small></span></Link>
 }
 
 function SiteNav() {
   const [open, setOpen] = useState(false)
   return <header className="site-nav wrap">
     <Brand />
-    <button className="mobile-toggle" aria-label="Toggle menu" onClick={() => setOpen(!open)}>{open ? <X /> : <Menu />}</button>
+    <button className="mobile-toggle" aria-label="Toggle menu" aria-expanded={open} onClick={() => setOpen(!open)}>{open ? <X /> : <Menu />}{open ? 'Close' : 'Menu'}</button>
     <nav className={open ? 'nav-links nav-open' : 'nav-links'}>
       <Link to="/portfolio">Selected work</Link><Link to="/#services">What we do</Link><Link to="/#studio">The studio</Link><Link to="/blog">Notes</Link>
-      <Link to="/studio" className="nav-login">Studio sign in</Link>
+      <Link to="/sign-in?returnTo=%2Fportal" className="nav-login">Client sign in</Link>
       <Link to="/contact" className="nav-cta">Start a project <ArrowRight size={15} /></Link>
     </nav>
   </header>
@@ -211,13 +212,15 @@ function SiteNav() {
 
 function SiteFooter() {
   const { studio } = usePublicStudio()
-  return <footer className="site-footer"><div className="wrap footer-content"><Brand light /><p>{studio?.about_text || 'Good work, made with intention.'}</p><div className="footer-links"><Link to="/portfolio">Portfolio</Link><Link to="/blog">Notes</Link><Link to="/contact">Contact</Link></div><NewsletterForm /><small>© {new Date().getFullYear()} {studio?.studio_name || 'GLYPH Creative Studio'}</small></div></footer>
+  return <footer className="site-footer"><div className="wrap footer-content"><Brand light /><p>{studio?.about_text || 'Good work, made with intention.'}<br />{studio?.location || 'Lagos & everywhere.'}</p><div className="footer-explore"><span>EXPLORE</span><Link to="/portfolio">Selected work</Link><Link to="/#services">What we do</Link><Link to="/#studio">The studio</Link><Link to="/blog">Studio notes</Link></div><div className="footer-contact"><span>LET’S TALK</span><a href="mailto:specificvisuals09@gmail.com">specificvisuals09@gmail.com</a><Link to="/contact">Start a project <ArrowRight size={13} /></Link><Link to="/sign-in?returnTo=%2Fportal">Client sign in <ArrowRight size={13} /></Link></div><small>© {new Date().getFullYear()} {studio?.studio_name || 'GLYPH Creative Studio'} <span>INDEPENDENT IN SPIRIT. INTENTIONAL BY DESIGN.</span></small></div></footer>
 }
 
 function PublicHome() {
   const { studio, error: studioError } = usePublicStudio()
   const [work, setWork] = useState([])
   const [loadError, setLoadError] = useState('')
+  const [latestNote, setLatestNote] = useState(null)
+  const [noteError, setNoteError] = useState('')
   useEffect(() => {
     if (!supabase) return
     supabase.from('portfolio_items').select('id, slug, title, service, summary, cover_path, featured').eq('published', true).order('featured', { ascending: false }).order('created_at', { ascending: false }).limit(3)
@@ -228,26 +231,42 @@ function PublicHome() {
         setWork(signed.data)
       })
   }, [])
+  useEffect(() => {
+    if (!studio?.workspace_id || !supabase) return undefined
+    let active = true
+    supabase.from('blog_posts').select('id, title, slug, excerpt, cover_image_url, published_at')
+      .eq('workspace_id', studio.workspace_id).eq('status', 'published')
+      .order('published_at', { ascending: false }).limit(1).maybeSingle()
+      .then(({ data, error }) => {
+        if (!active) return
+        if (error) setNoteError(error.message)
+        else setLatestNote(data)
+      })
+    return () => { active = false }
+  }, [studio?.workspace_id])
   return <div className="public-site marketing-site">
     <SiteNav />
     <main>
       {studioError && <p className="wrap notice-error">{studioError}</p>}
       <section className="hero wrap">
-        <div className="hero-copy"><p className="kicker"><i /> {studio?.tagline || 'INDEPENDENT CREATIVE STUDIO'} · {studio?.location || 'LAGOS & EVERYWHERE'}</p><h1>{(studio?.hero_title || 'Ideas into\nidentity.').split('\n').map((line, index) => <React.Fragment key={`${line}-${index}`}>{index > 0 && <br />}{line}</React.Fragment>)}</h1><p className="hero-lede">{studio?.hero_subtitle || 'We shape brands, images and moving stories for people building something that matters.'}</p><div className="hero-actions"><Link className="button button-yellow" to="/portfolio">Explore our work <ArrowRight size={17} /></Link><Link className="quiet-link" to="/contact">Tell us what you're making <ArrowDownRight size={16} /></Link></div><div className="hero-services"><span>BRAND</span><i /><span>IMAGE</span><i /><span>MOTION</span></div></div>
-        <div className="hero-visual" aria-label="GLYPH brand shapes"><div className="visual-frame"><div className="frame-top"><span>GLYPH / 001</span><span>CREATIVE STUDIO</span></div><img src={publicAsset('assets/glyph-shapes.png')} alt="GLYPH's bold geometric brand shapes in blue, yellow, orange, purple, and red" /><div className="frame-bottom"><b>Make your mark.</b><span>EST. FOR THE MAKERS</span></div></div><div className="hero-sticker">BRAVE<br />BY DESIGN <Sparkles size={18} /></div></div>
+        <div className="hero-copy"><p className="kicker"><i /> {studio?.tagline || 'INDEPENDENT CREATIVE STUDIO'} · {studio?.location || 'LAGOS & EVERYWHERE'}</p><h1>{(studio?.hero_title || 'Ideas into\nidentity.').split('\n').map((line, index) => <React.Fragment key={`${line}-${index}`}>{index > 0 && <br />}{index === 0 ? line : <em>{line}</em>}</React.Fragment>)}</h1><p className="hero-lede">{studio?.hero_subtitle || 'We shape brands, images and moving stories for people building something that matters.'}</p><div className="hero-actions"><Link className="button button-yellow" to="/portfolio">Explore our work <ArrowRight size={17} /></Link><Link className="button button-outline" to="/contact">Start a project <ArrowRight size={15} /></Link></div></div>
+        <div className="hero-visual" aria-label="Blue motion artwork"><div className="visual-frame"><img src={publicAsset('assets/glyph-wave.jpg')} alt="Luminous blue glass forms flowing across a dark studio floor" /></div></div>
       </section>
       <section className="studio-pillars wrap" aria-label="How the studio works">
-        <article><span>01 / IDENTITY</span><h2>Distinct by design.</h2><p>Clear, characterful brand identities made to feel like you.</p><Link to="/contact">Build a brand <ArrowRight size={14} /></Link></article>
-        <article><span>02 / IMAGE</span><h2>Made to move you.</h2><p>Photography and visuals that give good ideas a point of view.</p><Link to="/portfolio">Explore the work <ArrowRight size={14} /></Link></article>
-        <article><span>03 / MOTION</span><h2>Stories in motion.</h2><p>Thoughtful video and editing, shaped around the story.</p><Link to="/contact">Tell your story <ArrowRight size={14} /></Link></article>
+        <article><span>01</span><h2>BRAND</h2><Link to="/contact" aria-label="Explore brand identity">↗</Link></article>
+        <article><span>02</span><h2>IMAGE</h2><Link to="/portfolio" aria-label="Explore image-making">↗</Link></article>
+        <article><span>03</span><h2>MOTION</h2><Link to="/contact" aria-label="Explore motion work">↗</Link></article>
       </section>
-      <section className="marquee-band"><div className="wrap marquee"><span>IDENTITY</span><i>✳</i><span>DESIGN</span><i>✳</i><span>STORYTELLING</span><i>✳</i><span>IMAGE-MAKING</span><i>✳</i><span>IDENTITY</span></div></section>
-      <section className="work-section wrap" id="work"><div className="section-head"><div><p className="kicker">01 / SELECTED WORK</p><h2>Made to be<br /><em>remembered.</em></h2></div><Link className="quiet-link" to="/portfolio">See the portfolio <ArrowRight size={16} /></Link></div>
+      <section className="home-intro wrap"><p className="kicker">A STUDIO WITH INTENTION</p><div><h2>Good design doesn’t just look different.<br />It makes you <em>feel something.</em></h2><p>We turn thoughtful ideas into distinctive brands, vivid images and digital experiences. Clear in purpose. Full of character.</p></div></section>
+      <section className="work-section wrap" id="work"><div className="section-head"><div><p className="kicker">OUR CREATIVE PRACTICE</p><h2>Distinct by<br /><em>design.</em></h2></div><span className="work-section-aside">BRAND / IMAGE / MOTION</span></div>
         {loadError && <p className="notice-error">{loadError}</p>}
-        {work.length ? <div className="work-grid">{work.map((item, index) => <WorkCard key={item.id} item={item} index={index} />)}</div> : <div className="work-empty"><span className="shape-spark">✳</span><h3>Fresh work is on its way.</h3><p>We’re getting our first stories ready to share. Have a project in mind? Let’s make something worth showing.</p><Link className="quiet-link" to="/contact">Start a conversation <ArrowRight size={16} /></Link></div>}
+        <div className="work-grid">{(work.length ? work : homeWorkSamples).map((item, index) => <WorkCard key={item.id || item.title} item={item} index={index} />)}</div>
       </section>
       <section className="services-section" id="services"><div className="wrap services-layout"><div><p className="kicker">02 / WHAT WE DO</p><h2>Small studio.<br /><em>Wide lens.</em></h2><p className="section-copy">From the first sketch to the final frame, we bring clarity and character to every part of your story.</p><Link className="button button-outline" to="/contact">Let’s work together <ArrowRight size={16} /></Link></div><div className="service-list">{(studio?.services?.length ? studio.services : services).map((service, i) => <div className="service-row" key={service}><span>{String(i + 1).padStart(2, '0')}</span><b>{service}</b><ArrowRight size={17} /></div>)}</div></div><img className="service-shape" src={publicAsset('assets/glyph-shapes.png')} alt="" /></section>
-      <section className="studio-note wrap" id="studio"><div className="note-symbol">G.</div><div><p className="kicker">03 / THE STUDIO</p><h2>Good ideas need<br />good <em>company.</em></h2><p>{studio?.about_text || 'GLYPH is an independent creative studio partnering with ambitious people to build thoughtful brands and vivid visual worlds.'}</p><Link className="quiet-link" to="/contact">A little about your project <ArrowRight size={16} /></Link></div><div className="note-aside"><span>THOUGHTFUL<br />BY NATURE.</span><b>✳</b><span>FEARLESS<br />IN EXECUTION.</span></div></section>
+      <section className="studio-note wrap" id="studio"><div className="note-symbol"><span>G.</span><img src={publicAsset('assets/glyph-wave.jpg')} alt="" /></div><div><p className="kicker">03 / THE STUDIO</p><h2>Good ideas need<br />good <em>company.</em></h2><p>{studio?.about_text || 'GLYPH is an independent creative studio partnering with ambitious people to build thoughtful brands and vivid visual worlds.'}</p><Link className="button button-outline" to="/contact">A little about your project <ArrowRight size={16} /></Link></div><div className="note-aside"><span>THOUGHTFUL<br />BY NATURE.</span><b>✳</b><span>FEARLESS<br />IN EXECUTION.</span></div></section>
+      <section className="studio-process wrap"><div className="section-head"><div><p className="kicker">04 / THE GLYPH CLARITY PLAN</p><h2>A clear path to your<br />next chapter.</h2></div></div><div className="process-grid"><article><span>01 / FIRST CONVERSATION</span><h3>Let’s talk.</h3><p>Book a free discovery call. Tell us about your brand and your goals.</p></article><article><span>02 / YOUR DIRECTION</span><h3>Find your direction.</h3><p>Get your custom creative plan, with a clear scope and timeline.</p></article><article><span>03 / THOUGHTFUL MAKING</span><h3>We create. You shine.</h3><p>We create, refine with you, and help you launch with confidence.</p></article></div></section>
+      <section className="home-notes wrap"><div className="section-head"><div><p className="kicker">05 / STUDIO NOTES</p><h2>Ideas to take<br />with you.</h2></div><Link className="quiet-link" to="/blog">All notes <ArrowRight size={15} /></Link></div>{noteError && <p className="notice-error">{noteError}</p>}<Link className="home-note-feature" to={latestNote ? `/blog/${latestNote.slug}` : '/blog'}><img src={latestNote ? blogCover(latestNote, 0) : publicAsset('assets/glyph-notes-cover.jpg')} alt={latestNote ? `Cover image for ${latestNote.title}` : 'Brand identity before-and-after illustration'} loading="lazy" /><div><p className="kicker">BRAND THINKING / FIELD NOTES</p><h3>{latestNote?.title || 'Good ideas for the work you’re building.'}</h3><p>{latestNote?.excerpt || 'Clear, practical notes on making your brand easier to see, trust, and choose.'}</p><span>Read the story <ArrowRight size={15} /></span></div></Link></section>
+      <section className="home-newsletter wrap"><div><p className="kicker">A CLEARER NEXT STEP</p><h2>Ideas for your<br />next chapter.</h2><p>Occasional, useful notes for making your brand easier to trust.</p></div><NewsletterForm /></section>
       <section className="closing-cta"><div className="wrap cta-inner"><p className="kicker">HAVE A GOOD ONE IN MIND?</p><h2>Let’s make it<br /><em>real.</em></h2><Link className="button button-dark" to="/contact">Start a project <ArrowRight size={17} /></Link><div className="cta-star">✳</div></div></section>
     </main>
     <SiteFooter />
@@ -256,16 +275,16 @@ function PublicHome() {
 
 const blogCoverImages = [
   {
-    url: 'https://images.unsplash.com/photo-1556761175-b413da4baf72?auto=format&fit=crop&w=1400&q=85',
-    label: 'A founder planning the next step for their business',
+    url: publicAsset('assets/glyph-notes-cover.jpg'),
+    label: 'A brand identity before-and-after illustration',
   },
   {
-    url: 'https://images.unsplash.com/photo-1521737711867-e3b97375f902?auto=format&fit=crop&w=1400&q=85',
-    label: 'A small business team working through an idea together',
+    url: publicAsset('assets/glyph-work-brand.jpg'),
+    label: 'Blue glass brand shapes arranged on a studio surface',
   },
   {
-    url: 'https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=1400&q=85',
-    label: 'A bright, welcoming workspace for a growing business',
+    url: publicAsset('assets/glyph-work-motion.jpg'),
+    label: 'Blue motion forms moving across a dark studio floor',
   },
 ]
 
@@ -525,21 +544,41 @@ function NewsletterAction() {
 }
 
 function renderBlogBody(body) {
-  return body.split(/\n\s*\n/).map((block, index) => {
-    const value = block.trim()
-    if (!value) return null
-    const heading = value.match(/^#{1,3}\s+(.+)$/)
-    if (heading) return <h2 className={`blog-body-heading blog-body-heading-${index % 4}`} key={index}>{heading[1]}</h2>
-    const image = value.match(/^!\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)$/)
-    if (image) return <figure className="blog-body-figure" key={index}><img src={image[2]} alt={image[1]} loading="lazy" decoding="async" />{image[1] && <figcaption>{image[1]}</figcaption>}</figure>
-    const lines = value.split('\n')
-    if (lines.every((line) => /^[-*]\s+/.test(line.trim()))) {
-      return <ul className="blog-body-list" key={index}>{lines.map((line, itemIndex) => <li key={`${index}-${itemIndex}`}>{line.trim().replace(/^[-*]\s+/, '')}</li>)}</ul>
-    }
-    if (lines.every((line) => /^>\s?/.test(line.trim()))) {
-      return <blockquote className="blog-body-quote" key={index}>{lines.map((line) => line.trim().replace(/^>\s?/, '')).join(' ')}</blockquote>
-    }
-    return <p className={`blog-body-paragraph blog-body-paragraph-${index % 3}`} key={index}>{value}</p>
+  const sectionHeadings = [
+    'The real problem: forgettable visuals',
+    "Mistake 1: A logo that looks like everyone else's",
+    'Mistake 2: Colors and fonts that change everywhere',
+    'Mistake 3: Designing for yourself, not your customer',
+    'Mistake 4: Skipping the brand guide',
+    'Mistake 5: Spending on ads before the brand is ready',
+    "What it feels like when it's fixed",
+    'What happens if you wait',
+    'Your next step',
+  ]
+  const normalizedBody = /_{5,}/.test(body) && !/^#{1,3}\s/m.test(body)
+    ? body.replace(/\s*_{5,}\s*/g, '\n\n')
+    : body
+  const sectionPattern = new RegExp(`(${sectionHeadings.join('|')})`, 'gi')
+  return normalizedBody.split(sectionPattern).map((block, index) => {
+    const sectionHeading = sectionHeadings.find((candidate) => candidate.toLowerCase() === block.trim().toLowerCase())
+    if (sectionHeading) return <h2 className={`blog-body-heading blog-body-heading-${index % 4}`} key={index}>{sectionHeading}</h2>
+    return block.split(/\n\s*\n/).map((paragraph, paragraphIndex) => {
+      const value = paragraph.trim()
+      const key = `${index}-${paragraphIndex}`
+      if (!value) return null
+      const heading = value.match(/^#{1,3}\s+(.+)$/)
+      if (heading) return <h2 className={`blog-body-heading blog-body-heading-${index % 4}`} key={key}>{heading[1]}</h2>
+      const image = value.match(/^!\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)$/)
+      if (image) return <figure className="blog-body-figure" key={key}><img src={image[2]} alt={image[1]} loading="lazy" decoding="async" />{image[1] && <figcaption>{image[1]}</figcaption>}</figure>
+      const lines = value.split('\n')
+      if (lines.every((line) => /^[-*]\s+/.test(line.trim()))) {
+        return <ul className="blog-body-list" key={key}>{lines.map((line, itemIndex) => <li key={`${key}-${itemIndex}`}>{line.trim().replace(/^[-*]\s+/, '')}</li>)}</ul>
+      }
+      if (lines.every((line) => /^>\s?/.test(line.trim()))) {
+        return <blockquote className="blog-body-quote" key={key}>{lines.map((line) => line.trim().replace(/^>\s?/, '')).join(' ')}</blockquote>
+      }
+      return <p className={`blog-body-paragraph blog-body-paragraph-${index % 3}`} key={key}>{value}</p>
+    })
   })
 }
 
@@ -601,7 +640,7 @@ function BlogPage() {
 
   return <div className="public-site marketing-site blog-site"><SiteNav />
     <main>
-      {slug ? <div className="blog-article-backdrop" style={{ backgroundImage: `linear-gradient(#e9eef2df, #e9eef2df), url("${blogCover(article || {}, 0)}")` }}>
+      {slug ? <div className="blog-article-backdrop">
         <article className="blog-article wrap">
           {!posts ? <p className="loading-copy">Loading this article…</p> : article ? <div className="blog-article-panel">
             <Link className="blog-back" to="/blog"><ArrowLeft size={15} /> Back to insights</Link>
@@ -612,6 +651,7 @@ function BlogPage() {
             </header>
             <img className="blog-article-cover" src={blogCover(article, 0)} alt={`Cover image for ${article.title}`} />
             {article.excerpt && <p className="blog-article-excerpt">{article.excerpt}</p>}
+            <div className="blog-article-body">{renderBlogBody(article.body)}</div>
             <nav className={`blog-offer-shortcuts${article.document_title ? ' has-document' : ''}`} aria-label="Explore this post's offers">
               <a className="blog-offer-shortcut blog-offer-consultation" href="#consultation">
                 <span>YOUR NEXT STEP / 01</span><b>Book a consultation</b><small>From ₦10,000 / $7 · pick a session that fits</small><span className="blog-offer-shortcut-action">Explore sessions <ArrowRight size={15} /></span>
@@ -620,14 +660,13 @@ function BlogPage() {
                 <span>GO DEEPER / 02</span><b>{article.document_title}</b><small>PDF guide · ₦{Number(article.document_ngn_price).toLocaleString()} / ${Number(article.document_usd_price).toLocaleString()}</small><span className="blog-offer-shortcut-action">Get the guide <ArrowRight size={15} /></span>
               </a>}
             </nav>
-            <section className="blog-reading-newsletter"><div><p className="kicker">GET THE NEXT NOTE</p><h2>Useful ideas, straight to your inbox.</h2><p>Join the list for occasional, practical notes from GLYPH Studio.</p></div><NewsletterForm /></section>
-            <div className="blog-article-body">{renderBlogBody(article.body)}</div>
             <section className="blog-article-offers">
               <ConsultationBooking post={article} />
               {article.document_title && <PaidDocumentOffer post={article} />}
             </section>
             <BlogShareActions post={article} />
             <section className="blog-article-cta"><p className="kicker">YOUR NEXT STEP</p><h2>Ready to make your own mark?</h2><p>Tell us what you’re building. We’ll help you find a clear way forward.</p><Link className="button button-dark" to="/contact">Talk to the studio <ArrowRight size={15} /></Link></section>
+            <section className="blog-reading-newsletter"><div><p className="kicker">GET THE NEXT NOTE</p><h2>Useful ideas, straight to your inbox.</h2><p>Join the list for occasional, practical notes from GLYPH Studio.</p></div><NewsletterForm /></section>
           </div> : <div className="blog-empty"><h1>This story is still taking shape.</h1><p>In the meantime, explore the latest notes from the studio.</p><Link className="button button-yellow" to="/blog">Explore the blog <ArrowRight size={15} /></Link></div>}
           {error && <p className="notice-error">{error}</p>}
         </article>
@@ -643,8 +682,15 @@ function BlogPage() {
   </div>
 }
 
+const homeWorkSamples = [
+  { title: 'Clear, characterful brands', service: '01 / IDENTITY', summary: 'Made to feel like you.', image: 'glyph-work-brand.jpg', href: '/contact' },
+  { title: 'A point of view', service: '02 / IMAGE', summary: 'Visuals that give good ideas a point of view.', image: 'glyph-work-image.jpg', href: '/portfolio' },
+  { title: 'Stories in motion', service: '03 / MOTION', summary: 'Moving stories, shaped around the idea.', image: 'glyph-work-motion.jpg', href: '/contact' },
+]
+
 function WorkCard({ item, index }) {
-  return <Link to={`/portfolio/${item.slug}`} className={`work-card work-card-${index % 3}`}><div className="work-cover" style={item.cover_url ? { backgroundImage: `url("${item.cover_url}")` } : undefined}><span className="cover-index">GL / {String(index + 1).padStart(2, '0')}</span>{!item.cover_url && <span className="cover-type">{item.service || 'SELECTED WORK'}</span>}<ArrowDownRight size={22} /></div><p className="work-service">{item.service || 'CREATIVE STUDIO'}</p><h3>{item.title}</h3><p>{item.summary}</p></Link>
+  const image = item.cover_url || publicAsset(item.image || `assets/glyph-work-${['brand', 'image', 'motion'][index % 3]}.jpg`)
+  return <Link to={item.href || `/portfolio/${item.slug}`} className={`work-card work-card-${index % 3}`}><div className="work-cover" style={{ backgroundImage: `url("${image}")` }}><span className="cover-index">GL / {String(index + 1).padStart(2, '0')}</span><ArrowDownRight size={22} /></div><p className="work-service">{item.service || 'CREATIVE STUDIO'}</p><h3>{item.title}</h3><p>{item.summary}</p></Link>
 }
 
 function Portfolio() {
@@ -729,13 +775,19 @@ function Contact() {
     event.preventDefault()
     if (!supabase) { setError(supabaseConfigMessage); return }
     const form = event.currentTarget
-    const values = Object.fromEntries(new FormData(form))
+    const formData = new FormData(form)
+    const values = Object.fromEntries(formData)
+    const selectedServices = formData.getAll('service').map((service) => String(service).trim()).filter(Boolean)
     const email = String(values.email).trim().toLowerCase()
     const hasMatchingClientSession = Boolean(
       user?.email
       && email === user.email.toLowerCase()
       && user.email.toLowerCase() !== studioOwnerEmail,
     )
+    if (!selectedServices.length) {
+      setError('Choose at least one service to get started.')
+      return
+    }
     if (!hasMatchingClientSession && values.password !== values.confirmPassword) {
       setError('The passwords do not match.')
       return
@@ -745,7 +797,7 @@ function Contact() {
     const { error: submitError } = await supabase.rpc('submit_inquiry', {
       inquiry_name: String(values.name).trim(),
       inquiry_email: email,
-      inquiry_service: String(values.service),
+      inquiry_service: selectedServices.join(', '),
       inquiry_message: String(values.message).trim(),
     })
     if (submitError) {
@@ -792,7 +844,7 @@ function Contact() {
     setSent(true)
     setBusy(false)
   }
-  return <div className="public-site marketing-site"><SiteNav /><main className="wrap contact-page"><div className="contact-intro"><p className="kicker">LET’S GET INTO IT</p><h1>Tell us what<br />you’re <em>dreaming.</em></h1><p>Give {studio?.studio_name || 'the studio'} the short version. We’ll take it from there.</p><div className="contact-mark">✳</div></div><div className="contact-form panel">{sent ? <div className="form-success"><Check /><h2>Request received.</h2><p>{successMessage}</p>{error && <p className="notice-error">{error}</p>}<Link className="button button-dark" to="/sign-in?returnTo=%2Fportal">Go to client portal sign-in <ArrowRight size={16} /></Link></div> : <form onSubmit={submit}><label>Your name<input name="name" required maxLength="120" autoComplete="name" /></label><label>Your email<input name="email" required type="email" maxLength="254" autoComplete="email" value={contactEmail} onChange={(event) => setContactEmail(event.target.value)} /></label><label>What are you looking for?<select name="service" defaultValue=""><option value="" disabled>Pick a starting point</option>{(studio?.services?.length ? studio.services : services).map((service) => <option key={service}>{service}</option>)}<option>Something else</option></select></label><label>A little about it<textarea name="message" required minLength="10" maxLength="5000" rows="5" /></label>{!hasMatchingClientSession && <><label>Create a client portal password<input name="password" required type="password" minLength="8" autoComplete="new-password" /></label><label>Confirm password<input name="confirmPassword" required type="password" minLength="8" autoComplete="new-password" /></label><small className="muted-copy">Use this email and password to sign in to your client portal.</small></>}{hasMatchingClientSession && <p className="muted-copy">You’re signed in as {user.email}; this request will be added to your client portal.</p>}{error && <p className="notice-error">{error}</p>}<button className="button button-dark button-wide" disabled={busy}>{busy ? 'Creating your request…' : hasMatchingClientSession ? 'Send project request' : 'Send request & open portal'} <Send size={16} /></button></form>}</div></main><SiteFooter /></div>
+  return <div className="public-site marketing-site"><SiteNav /><main className="wrap contact-page"><div className="contact-intro"><p className="kicker">LET’S GET INTO IT</p><h1>Tell us what<br />you’re <em>dreaming.</em></h1><p>Give {studio?.studio_name || 'the studio'} the short version. We’ll take it from there.</p><div className="contact-mark"><span>MAKE YOUR MARK.</span><img src={publicAsset('assets/glyph-wave.jpg')} alt="" /></div><a className="contact-email" href="mailto:specificvisuals09@gmail.com">specificvisuals09@gmail.com <ArrowRight size={14} /></a><p className="contact-location">{studio?.location || 'Lagos & everywhere.'}</p></div><div className="contact-form panel">{sent ? <div className="form-success"><Check /><h2>Request received.</h2><p>{successMessage}</p>{error && <p className="notice-error">{error}</p>}<Link className="button button-dark" to="/sign-in?returnTo=%2Fportal">Go to client portal sign-in <ArrowRight size={16} /></Link></div> : <><p className="contact-form-title">A good place to start.</p><p className="kicker">YOUR PROJECT / YOUR NEXT CHAPTER</p><form onSubmit={submit}><label>Your name<input name="name" required maxLength="120" autoComplete="name" placeholder="What should we call you?" /></label><label>Your email<input name="email" required type="email" maxLength="254" autoComplete="email" placeholder="you@company.com" value={contactEmail} onChange={(event) => setContactEmail(event.target.value)} /></label><fieldset className="contact-service-fieldset"><legend>What are you looking for?</legend><div>{(studio?.services?.length ? studio.services : services).map((service) => <label className="contact-service-option" key={service}><input type="checkbox" name="service" value={service} /><span>{service}</span></label>)}<label className="contact-service-option"><input type="checkbox" name="service" value="Something else" /><span>Something else</span></label></div></fieldset><label>A little about it<textarea name="message" required minLength="10" maxLength="5000" rows="5" placeholder="Your idea, goals, and what you need." /></label>{!hasMatchingClientSession && <><div className="contact-form-subhead">YOUR CLIENT SPACE</div><label>Create a client portal password<input name="password" required type="password" minLength="8" autoComplete="new-password" placeholder="Create password" /></label><label>Confirm password<input name="confirmPassword" required type="password" minLength="8" autoComplete="new-password" placeholder="Confirm password" /></label><small className="muted-copy">Use this email and password to sign in to your client portal.</small></>}{hasMatchingClientSession && <p className="muted-copy">You’re signed in as {user.email}; this request will be added to your client portal.</p>}{error && <p className="notice-error">{error}</p>}<button className="button button-dark button-wide" disabled={busy}>{busy ? 'Creating your request…' : hasMatchingClientSession ? 'Send project request' : 'Send request & open portal'} <ArrowRight size={16} /></button></form></>}</div></main><SiteFooter /></div>
 }
 
 function AuthPage({ signup = false }) {
@@ -913,7 +965,7 @@ function AuthPage({ signup = false }) {
         : isClientPortal ? 'Sign in with the email address and password you created for your client portal.'
           : 'Sign in to your creative studio.'
   if (signup && !isClientInvite) return <Navigate to="/" replace />
-  return <div className="auth-layout"><div className="auth-brand"><Brand /></div><main className="auth-panel"><p className="kicker">{isClientInvite || isClientPortal ? 'GLYPH / CLIENT ACCESS' : 'GLYPH / STUDIO ACCESS'}</p><h1>{title}</h1><p>{description}</p>{isClientInvite && inviteStatus === 'loading' && <p className="loading-copy">Checking your private invitation…</p>}<form onSubmit={submit}>{signup && !resetMode && !recoveryPending && <label>Your name<input name="fullName" required minLength="2" autoComplete="name" /></label>}{!recoveryPending && !resetMode && <label>Email<input name="email" required type="email" autoComplete="email" value={isClientInvite && inviteStatus === 'valid' ? inviteEmail : undefined} readOnly={isClientInvite} /></label>}{resetMode && <label>Email<input name="email" required type="email" autoComplete="email" /></label>}{!resetMode && <label>{recoveryPending ? 'New password' : 'Password'}<input name="password" required type="password" minLength={signup || recoveryPending ? 8 : undefined} autoComplete={signup || recoveryPending ? 'new-password' : 'current-password'} /></label>}{recoveryPending && <label>Confirm new password<input name="confirmPassword" required type="password" minLength="8" autoComplete="new-password" /></label>}{error && <p className="notice-error">{error}</p>}{message && <p className="notice-success">{message}</p>}{!configured && <p className="notice-error">{configMessage}</p>}<button className="button button-dark button-wide" disabled={busy || !configured || (isClientInvite && inviteStatus !== 'valid')}>{busy ? 'One moment…' : recoveryPending ? 'Save new password' : resetMode ? 'Send reset link' : signup ? 'Create client account' : 'Sign in'} <ArrowRight size={16} /></button></form>{!signup && !recoveryPending && <button className="quiet-link auth-reset" onClick={() => { setResetMode((current) => !current); setError(''); setMessage('') }}>{resetMode ? 'Back to sign in' : 'Forgot your password?'}</button>}{isClientInvite && <p className="auth-switch">{signup ? 'Already have a client login?' : 'New to the client portal?'} <Link to={`${signup ? '/sign-in' : '/create-account'}${authQuery}`}>{signup ? 'Sign in' : 'Create a client login'}</Link></p>}<Link className="quiet-link auth-back" to="/"><ArrowLeft size={15} /> Back to the public site</Link></main></div>
+  return <div className="public-site marketing-site auth-site"><SiteNav /><main className="wrap auth-page"><section className="auth-intro"><p className="kicker">YOUR IDEA.<br />OUR SHARED SPACE.</p><h1>Good things<br />are taking shape.</h1><p>A clear view of the making.<br />From first conversation to final delivery.</p><div className="auth-art"><img src={publicAsset('assets/glyph-wave.jpg')} alt="" /></div></section><section className="auth-panel"><p className="kicker">{isClientInvite || isClientPortal ? 'WELCOME BACK' : 'GLYPH / STUDIO ACCESS'}</p><h2>{title}</h2><p>{description}</p>{isClientInvite && inviteStatus === 'loading' && <p className="loading-copy">Checking your private invitation…</p>}<form onSubmit={submit}>{signup && !resetMode && !recoveryPending && <label>Your name<input name="fullName" required minLength="2" autoComplete="name" /></label>}{!recoveryPending && !resetMode && <label>Email<input name="email" required type="email" autoComplete="email" value={isClientInvite && inviteStatus === 'valid' ? inviteEmail : undefined} readOnly={isClientInvite} /></label>}{resetMode && <label>Email<input name="email" required type="email" autoComplete="email" /></label>}{!resetMode && <label>{recoveryPending ? 'New password' : 'Password'}<input name="password" required type="password" minLength={signup || recoveryPending ? 8 : undefined} autoComplete={signup || recoveryPending ? 'new-password' : 'current-password'} /></label>}{recoveryPending && <label>Confirm new password<input name="confirmPassword" required type="password" minLength="8" autoComplete="new-password" /></label>}{error && <p className="notice-error">{error}</p>}{message && <p className="notice-success">{message}</p>}{!configured && <p className="notice-error">{configMessage}</p>}<button className="button button-dark button-wide" disabled={busy || !configured || (isClientInvite && inviteStatus !== 'valid')}>{busy ? 'One moment…' : recoveryPending ? 'Save new password' : resetMode ? 'Send reset link' : signup ? 'Create client account' : 'Sign in'} <ArrowRight size={16} /></button></form>{!signup && !recoveryPending && <button className="quiet-link auth-reset" onClick={() => { setResetMode((current) => !current); setError(''); setMessage('') }}>{resetMode ? 'Back to sign in' : 'Forgot your password?'}</button>}{isClientInvite && <p className="auth-switch">{signup ? 'Already have a client login?' : 'New to the client portal?'} <Link to={`${signup ? '/sign-in' : '/create-account'}${authQuery}`}>{signup ? 'Sign in' : 'Create a client login'}</Link></p>}<Link className="quiet-link auth-back" to="/"><ArrowLeft size={15} /> Back to the public site</Link></section></main><SiteFooter /></div>
 }
 
 function isPortalInvitation(path) {
