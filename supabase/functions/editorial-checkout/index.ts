@@ -176,6 +176,15 @@ Deno.serve(async (request) => {
       }
     }
 
+    const { error: newsletterError } = await supabase.from('newsletter_subscribers').upsert({
+      workspace_id: post.workspace_id,
+      email,
+      confirmed_at: new Date().toISOString(),
+    }, { onConflict: 'workspace_id,email', ignoreDuplicates: true })
+    if (newsletterError) {
+      throw new Error(`Could not add this email to the mailing list: ${newsletterError.message}`)
+    }
+
     const mode = requiredEnv('BACHS_MODE')
     const apiKey = requiredEnv('BACHS_API_KEY')
     const organizationId = requiredEnv('BACHS_ORGANIZATION_ID')

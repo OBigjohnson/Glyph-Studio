@@ -437,6 +437,7 @@ function ConsultationBooking({ post }) {
       <label>Pay in<select value={currency} onChange={(event) => setCurrency(event.target.value)}><option value="NGN">Nigerian naira (NGN)</option><option value="USD">US dollars (USD)</option></select></label>
       <label>Your name<input name="name" autoComplete="name" maxLength="160" /></label>
       <label>Email for your receipt and appointment<input name="email" type="email" required maxLength="320" autoComplete="email" /></label>
+      <small className="muted-copy">By continuing, you’ll receive occasional GLYPH Studio email updates unless you’ve previously unsubscribed. Unsubscribe any time.</small>
       <label>Preferred date and time <span>(Africa/Lagos)</span><input name="requested_at" type="datetime-local" required min={lagosDateTimeLocal(new Date(Date.now() + 60 * 60 * 1000))} /></label>
       {error && <span className="newsletter-feedback newsletter-error" role="alert">{error}</span>}
       <button className="button button-dark" disabled={busy}>{busy ? 'Opening secure checkout…' : 'Continue to payment'} <ArrowRight size={15} /></button>
@@ -526,6 +527,7 @@ function PaidDocumentOffer({ post }) {
     <form onSubmit={submit}>
       <label>Pay in<select value={currency} onChange={(event) => setCurrency(event.target.value)}><option value="NGN">Nigerian naira (NGN)</option><option value="USD">US dollars (USD)</option></select></label>
       <label>Email for your receipt and download link<input name="email" type="email" required maxLength="320" autoComplete="email" /></label>
+      <small className="muted-copy">By continuing, you’ll receive occasional GLYPH Studio email updates unless you’ve previously unsubscribed. Unsubscribe any time.</small>
       {error && <span className="newsletter-feedback newsletter-error" role="alert">{error}</span>}
       <button className="button button-dark" disabled={busy}>{busy ? 'Opening secure checkout…' : `Pay ${currency === 'NGN' ? '₦' : '$'}${Number(amount).toLocaleString()} and download`} <ArrowRight size={15} /></button>
     </form>
@@ -721,14 +723,41 @@ function BlogPage() {
   useEffect(() => {
     const title = article ? `${article.seo_title || article.title} — GLYPH Studio` : 'Brand notes for businesses ready to be seen — GLYPH Studio'
     const description = article?.meta_description || article?.excerpt || 'Clear, practical ideas to help your business look professional, earn trust, and get noticed.'
+    const url = article ? publicAppUrl(`/blog/${article.slug}`) : publicAppUrl('/blog')
+    const imageSource = article ? blogCover(article, 0) : publicAsset('assets/glyph-notes-cover.jpg')
+    const image = new URL(imageSource, window.location.origin)
+    if (!['http:', 'https:'].includes(image.protocol)) image.href = new URL(publicAsset('assets/glyph-notes-cover.jpg'), window.location.origin).href
     const previousTitle = document.title
-    const descriptionTag = document.querySelector('meta[name="description"]')
-    const previousDescription = descriptionTag?.getAttribute('content') || ''
+    const tags = [
+      ['meta[name="description"]', description],
+      ['meta[property="og:title"]', title],
+      ['meta[property="og:description"]', description],
+      ['meta[property="og:type"]', article ? 'article' : 'website'],
+      ['meta[property="og:url"]', url],
+      ['meta[property="og:image"]', image.href],
+      ['meta[property="og:image:alt"]', article ? `Cover image for ${article.title}` : 'GLYPH Studio blog cover'],
+      ['meta[name="twitter:title"]', title],
+      ['meta[name="twitter:description"]', description],
+      ['meta[name="twitter:image"]', image.href],
+      ['meta[name="twitter:image:alt"]', article ? `Cover image for ${article.title}` : 'GLYPH Studio blog cover'],
+    ].map(([selector, content]) => {
+      const element = document.querySelector(selector)
+      const previous = element?.getAttribute('content')
+      element?.setAttribute('content', content)
+      return { element, previous }
+    })
+    const canonicalTag = document.querySelector('link[rel="canonical"]')
+    const previousCanonical = canonicalTag?.getAttribute('href')
     document.title = title
-    descriptionTag?.setAttribute('content', description)
+    canonicalTag?.setAttribute('href', url)
     return () => {
       document.title = previousTitle
-      descriptionTag?.setAttribute('content', previousDescription)
+      tags.forEach(({ element, previous }) => {
+        if (previous === null) element?.removeAttribute('content')
+        else element?.setAttribute('content', previous)
+      })
+      if (previousCanonical === null) canonicalTag?.removeAttribute('href')
+      else canonicalTag?.setAttribute('href', previousCanonical)
     }
   }, [article])
 
@@ -946,7 +975,53 @@ function Contact() {
     setSent(true)
     setBusy(false)
   }
-  return <div className="public-site marketing-site"><SiteNav /><main className="wrap contact-page"><div className="contact-intro"><p className="kicker">LET’S GET INTO IT</p><h1>Tell us what<br />you’re <em>dreaming.</em></h1><p>Give {studio?.studio_name || 'the studio'} the short version. We’ll take it from there.</p><div className="contact-mark"><span>MAKE YOUR MARK.</span><img src={publicAsset('assets/glyph-wave.jpg')} alt="" /></div><a className="contact-email" href="mailto:specificvisuals09@gmail.com">specificvisuals09@gmail.com <ArrowRight size={14} /></a><p className="contact-location">{studio?.location || 'Lagos & everywhere.'}</p></div><div className="contact-form panel">{sent ? <div className="form-success"><Check /><h2>Request received.</h2><p>{successMessage}</p>{error && <p className="notice-error">{error}</p>}<Link className="button button-dark" to="/sign-in?returnTo=%2Fportal">Go to client portal sign-in <ArrowRight size={16} /></Link></div> : <><p className="contact-form-title">A good place to start.</p><p className="kicker">YOUR PROJECT / YOUR NEXT CHAPTER</p><form onSubmit={submit}><label>Your name<input name="name" required maxLength="120" autoComplete="name" placeholder="What should we call you?" /></label><label>Your email<input name="email" required type="email" maxLength="254" autoComplete="email" placeholder="you@company.com" value={contactEmail} onChange={(event) => setContactEmail(event.target.value)} /></label><fieldset className="contact-service-fieldset"><legend>What are you looking for?</legend><div>{(studio?.services?.length ? studio.services : services).map((service) => <label className="contact-service-option" key={service}><input type="checkbox" name="service" value={service} /><span>{service}</span></label>)}<label className="contact-service-option"><input type="checkbox" name="service" value="Something else" /><span>Something else</span></label></div></fieldset><label>A little about it<textarea name="message" required minLength="10" maxLength="5000" rows="5" placeholder="Your idea, goals, and what you need." /></label>{!hasMatchingClientSession && <><div className="contact-form-subhead">YOUR CLIENT SPACE</div><label>Create a client portal password<input name="password" required type="password" minLength="8" autoComplete="new-password" placeholder="Create password" /></label><label>Confirm password<input name="confirmPassword" required type="password" minLength="8" autoComplete="new-password" placeholder="Confirm password" /></label><small className="muted-copy">Use this email and password to sign in to your client portal.</small></>}{hasMatchingClientSession && <p className="muted-copy">You’re signed in as {user.email}; this request will be added to your client portal.</p>}{error && <p className="notice-error">{error}</p>}<button className="button button-dark button-wide" disabled={busy}>{busy ? 'Creating your request…' : hasMatchingClientSession ? 'Send project request' : 'Send request & open portal'} <ArrowRight size={16} /></button></form></>}</div></main><SiteFooter /></div>
+  return <div className="public-site marketing-site">
+    <SiteNav />
+    <main className="wrap contact-page">
+      <div className="contact-intro">
+        <p className="kicker">LET’S GET INTO IT</p>
+        <h1>Tell us what<br />you’re <em>dreaming.</em></h1>
+        <p>Give {studio?.studio_name || 'the studio'} the short version. We’ll take it from there.</p>
+        <div className="contact-mark"><span>MAKE YOUR MARK.</span><img src={publicAsset('assets/glyph-wave.jpg')} alt="" /></div>
+        <a className="contact-email" href="mailto:specificvisuals09@gmail.com">specificvisuals09@gmail.com <ArrowRight size={14} /></a>
+        <p className="contact-location">{studio?.location || 'Lagos & everywhere.'}</p>
+      </div>
+      <div className="contact-form panel">
+        {sent ? <div className="form-success">
+          <Check />
+          <h2>Request received.</h2>
+          <p>{successMessage}</p>
+          {error && <p className="notice-error">{error}</p>}
+          <Link className="button button-dark" to="/sign-in?returnTo=%2Fportal">Go to client portal sign-in <ArrowRight size={16} /></Link>
+        </div> : <>
+          <p className="contact-form-title">A good place to start.</p>
+          <p className="kicker">YOUR PROJECT / YOUR NEXT CHAPTER</p>
+          <form onSubmit={submit}>
+            <label>Your name<input name="name" required maxLength="120" autoComplete="name" placeholder="What should we call you?" /></label>
+            <label>Your email<input name="email" required type="email" maxLength="254" autoComplete="email" placeholder="you@company.com" value={contactEmail} onChange={(event) => setContactEmail(event.target.value)} /></label>
+            <fieldset className="contact-service-fieldset">
+              <legend>What are you looking for?</legend>
+              <div>{(studio?.services?.length ? studio.services : services).map((service) => <label className="contact-service-option" key={service}><input type="checkbox" name="service" value={service} /><span>{service}</span></label>)}
+                <label className="contact-service-option"><input type="checkbox" name="service" value="Something else" /><span>Something else</span></label>
+              </div>
+            </fieldset>
+            <label>A little about it<textarea name="message" required minLength="10" maxLength="5000" rows="5" placeholder="Your idea, goals, and what you need." /></label>
+            {!hasMatchingClientSession && <>
+              <div className="contact-form-subhead">YOUR CLIENT SPACE</div>
+              <label>Create a client portal password<input name="password" required type="password" minLength="8" autoComplete="new-password" placeholder="Create password" /></label>
+              <label>Confirm password<input name="confirmPassword" required type="password" minLength="8" autoComplete="new-password" placeholder="Confirm password" /></label>
+              <small className="muted-copy">Use this email and password to sign in to your client portal.</small>
+            </>}
+            {hasMatchingClientSession && <p className="muted-copy">You’re signed in as {user.email}; this request will be added to your client portal.</p>}
+            <small className="muted-copy">By sending your request, you’ll receive occasional GLYPH Studio email updates unless you’ve previously unsubscribed. Unsubscribe any time.</small>
+            {error && <p className="notice-error">{error}</p>}
+            <button className="button button-dark button-wide" disabled={busy}>{busy ? 'Creating your request…' : hasMatchingClientSession ? 'Send project request' : 'Send request & open portal'} <ArrowRight size={16} /></button>
+          </form>
+        </>}
+      </div>
+    </main>
+    <SiteFooter />
+  </div>
 }
 
 function AuthPage({ signup = false }) {
@@ -2902,8 +2977,8 @@ function StudioEditorial() {
         </div>
       </section>
       <section className="editorial-audience">
-        <div className="studio-section-heading"><div><p className="kicker">PERMISSION-BASED MAILING LIST</p><h2>Your readers choose.</h2></div></div>
-        <p>Readers join immediately without an email confirmation. Every campaign includes an unsubscribe link.</p>
+        <div className="studio-section-heading"><div><p className="kicker">NEWSLETTER / CONTACTS</p><h2>Your growing audience.</h2></div></div>
+        <p>People join through the newsletter, project requests, and consultation or PDF checkouts. Every campaign includes an unsubscribe link, and previous unsubscribes are respected.</p>
         <div className="subscriber-count"><Mail size={18} /><b>{activeSubscriberCount}</b><span>active subscribers</span></div>
         {campaigns.length > 0 && <div className="editorial-history"><b>Recent sends</b>{campaigns.map((campaign) => <div key={campaign.id}><span>{campaign.subject}</span><small>{campaign.recipient_count} · {new Date(campaign.sent_at).toLocaleDateString()}</small></div>)}</div>}
       </section>
@@ -2912,7 +2987,7 @@ function StudioEditorial() {
       <div className="studio-section-heading"><div><p className="kicker">{blogDraft.id ? 'EDIT BLOG POST' : 'NEW BLOG POST'}</p><h2>Add your content.</h2></div><button className="icon-button" aria-label="Close blog draft" onClick={() => { setBlogDraft(null); setInlineImages([]); setCoverFile(null); setDocumentFile(null); setRemoveDocument(false) }}><X size={17} /></button></div>
       <label>Title<input required maxLength="180" value={blogDraft.title} onChange={(event) => editBlogDraft('title', event.target.value)} /></label>
       <label>Excerpt<textarea rows="2" maxLength="400" value={blogDraft.excerpt} onChange={(event) => editBlogDraft('excerpt', event.target.value)} /></label>
-      <div className="editorial-cover-picker"><label>Cover image<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setCoverFile(event.target.files?.[0] || null)} /><small className="muted-copy">Add your own JPG, PNG, or WebP image (up to 10 MB). A cover image is required to publish.</small></label>{(coverPreview || blogDraft.cover_image_url) && <img src={coverPreview || blogDraft.cover_image_url} alt="Preview of the blog cover image" />}</div>
+      <div className="editorial-cover-picker"><label>Cover image<input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setCoverFile(event.target.files?.[0] || null)} /><small className="muted-copy">Add your own JPG, PNG, or WebP image (up to 10 MB). A cover image is required to publish. For social previews, use a landscape image around 1200 × 630 pixels.</small></label>{(coverPreview || blogDraft.cover_image_url) && <img src={coverPreview || blogDraft.cover_image_url} alt="Preview of the blog cover image" />}</div>
       <section className="editorial-document-editor"><p className="kicker">OPTIONAL PAID PDF DOWNLOAD</p>
         {blogDraft.document_storage_path && !removeDocument && !documentFile && <p className="muted-copy">Current PDF: {blogDraft.document_title} <button type="button" className="quiet-link" onClick={() => setRemoveDocument(true)}>Remove PDF</button></p>}
         {removeDocument && <p className="muted-copy">The current PDF will be removed when you save. <button type="button" className="quiet-link" onClick={() => setRemoveDocument(false)}>Keep PDF</button></p>}
@@ -4561,6 +4636,7 @@ function ClientPortal() {
           : <form onSubmit={submitAnotherProject}>
             <label>What are you looking for?<select required value={projectRequestService} onChange={(event) => setProjectRequestService(event.target.value)}><option value="" disabled>Choose a service</option>{(studio?.services?.length ? studio.services : services).map((service) => <option key={service}>{service}</option>)}<option>Something else</option></select></label>
             <label>Tell us about this project<textarea required minLength="10" maxLength="5000" rows="4" value={projectRequestMessage} onChange={(event) => setProjectRequestMessage(event.target.value)} /></label>
+            <small className="muted-copy">Sending this request adds your email to occasional GLYPH Studio updates unless you’ve previously unsubscribed. Unsubscribe any time.</small>
             <div className="portal-new-project-actions"><button className="button button-soft" type="button" disabled={projectRequestBusy} onClick={() => setProjectRequestOpen(false)}>Cancel</button><button className="button button-dark" disabled={projectRequestBusy}>{projectRequestBusy ? 'Sending request…' : 'Send project request'} <Send size={15} /></button></div>
           </form>}
       </section>
