@@ -77,7 +77,7 @@ Deno.serve(async (request) => {
 
       const { data: workspace, error: workspaceError } = await supabase
         .from('workspaces')
-        .select('id, studio_name')
+        .select('id')
         .eq('slug', workspaceSlug)
         .maybeSingle()
       if (workspaceError) throw new Error(`Could not find the newsletter workspace: ${workspaceError.message}`)
@@ -85,12 +85,12 @@ Deno.serve(async (request) => {
 
       const { data: existing, error: existingError } = await supabase
         .from('newsletter_subscribers')
-        .select('id, confirmed_at, unsubscribed_at')
+        .select('id, unsubscribed_at')
         .eq('workspace_id', workspace.id)
         .eq('email', email)
         .maybeSingle()
       if (existingError) throw new Error(`Could not check the mailing list: ${existingError.message}`)
-      if (existing?.confirmed_at && !existing.unsubscribed_at) return response({ ok: true })
+      if (existing && !existing.unsubscribed_at) return response({ ok: true })
 
       const confirmationToken = crypto.randomUUID()
       const unsubscribeToken = crypto.randomUUID()
@@ -99,59 +99,25 @@ Deno.serve(async (request) => {
         email,
         confirmation_token: confirmationToken,
         unsubscribe_token: unsubscribeToken,
-        confirmed_at: null,
+        confirmed_at: new Date().toISOString(),
         unsubscribed_at: null,
       }, { onConflict: 'workspace_id,email' })
       if (saveError) throw new Error(`Could not save your subscription request: ${saveError.message}`)
-
-      const appUrl = requiredEnv('PUBLIC_APP_URL').replace(/\/+$/, '')
-      const confirmationUrl = `${appUrl}/newsletter/confirm?token=${encodeURIComponent(confirmationToken)}`
-      const resendResponse = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${requiredEnv('RESEND_API_KEY')}`,
-          'Content-Type': 'application/json',
-        },
-        signal: AbortSignal.timeout(15_000),
-        body: JSON.stringify({
-          from: requiredEnv('NEWSLETTER_FROM'),
-          to: [email],
-          subject: `Confirm your ${workspace.studio_name} newsletter subscription`,
-          text: `Thanks for signing up for ${workspace.studio_name} updates. Confirm your subscription: ${confirmationUrl}\n\nIf you did not sign up, you can ignore this email.`,
-          html: `<div style="font-family:Arial,sans-serif;color:#211d2b;max-width:600px;margin:0 auto;padding:32px 20px"><h1 style="font-size:24px">One quick step</h1><p>Confirm that you want to receive thoughtful brand and creative notes from ${htmlEscape(workspace.studio_name)}.</p><p><a href="${htmlEscape(confirmationUrl)}" style="display:inline-block;padding:13px 18px;background:#171717;color:#fff;text-decoration:none">Confirm subscription</a></p><p style="font-size:12px;color:#777">If you did not sign up, you can ignore this email.</p></div>`,
-        }),
-      })
-      if (!resendResponse.ok) {
-        const providerError = await resendResponse.text()
-        console.error('Resend confirmation email failed:', resendResponse.status, providerError.slice(0, 500))
-        return response({ error: 'Your request was saved, but the confirmation email could not be sent. Please try again later.' }, 502)
-      }
       return response({ ok: true })
     }
 
-    if (action === 'confirm' || action === 'unsubscribe') {
+    if (action === 'unsubscribe') {
       const token = typeof body.token === 'string' ? body.token : ''
       if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(token)) {
         return response({ error: 'This newsletter link is invalid or has expired.' }, 400)
       }
-      const tokenColumn = action === 'confirm' ? 'confirmation_token' : 'unsubscribe_token'
       const { data: subscriber, error: subscriberError } = await supabase
         .from('newsletter_subscribers')
-        .select('id, confirmed_at, unsubscribed_at')
-        .eq(tokenColumn, token)
+        .select('id, unsubscribed_at')
+        .eq('unsubscribe_token', token)
         .maybeSingle()
       if (subscriberError) throw new Error(`Could not verify the newsletter link: ${subscriberError.message}`)
       if (!subscriber) return response({ error: 'This newsletter link is invalid or has expired.' }, 404)
-      if (action === 'confirm') {
-        if (subscriber.unsubscribed_at) return response({ error: 'This subscription has been unsubscribed.' }, 400)
-        if (!subscriber.confirmed_at) {
-          const { error: updateError } = await supabase.from('newsletter_subscribers')
-            .update({ confirmed_at: new Date().toISOString(), confirmation_token: crypto.randomUUID() })
-            .eq('id', subscriber.id)
-          if (updateError) throw new Error(`Could not confirm the subscription: ${updateError.message}`)
-        }
-        return response({ ok: true, message: 'Your subscription is confirmed. Thanks for joining.' })
-      }
       if (!subscriber.unsubscribed_at) {
         const { error: updateError } = await supabase.from('newsletter_subscribers')
           .update({ unsubscribed_at: new Date().toISOString() })
@@ -191,13 +157,12 @@ Deno.serve(async (request) => {
       .from('newsletter_subscribers')
       .select('email, unsubscribe_token')
       .eq('workspace_id', membership.workspace_id)
-      .not('confirmed_at', 'is', null)
       .is('unsubscribed_at', null)
       .order('created_at')
-    if (subscriberError) throw new Error(`Could not load confirmed subscribers: ${subscriberError.message}`)
-    if (!subscribers?.length) return response({ error: 'There are no confirmed subscribers to email yet.' }, 400)
+    if (subscriberError) throw new Error(`Could not load active subscribers: ${subscriberError.message}`)
+    if (!subscribers?.length) return response({ error: 'There are no active subscribers to email yet.' }, 400)
     if (subscribers.length > 100) {
-      return response({ error: 'This first version sends one batch of up to 100 confirmed subscribers. No email was sent; narrow the audience or split the campaign.' }, 400)
+      return response({ error: 'This first version sends one batch of up to 100 active subscribers. No email was sent; narrow the audience or split the campaign.' }, 400)
     }
 
     const appUrl = requiredEnv('PUBLIC_APP_URL').replace(/\/+$/, '')

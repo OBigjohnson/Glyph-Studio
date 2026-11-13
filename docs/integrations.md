@@ -76,15 +76,16 @@ description for accessibility. Posts can be saved as drafts and published
 manually. No AI-generated blog or newsletter copy, or scheduled blog drafts,
 are used.
 
-The public mailing-list form uses double opt-in. Only confirmed subscribers
-receive campaigns, and each message includes an unsubscribe link. Sending uses
-Resend from `hello@glyphstudio.cv`; Resend must verify `glyphstudio.cv` and its
-DNS records before mail can be delivered. The sender and provider credentials
-stay in Supabase Function secrets. Studio sends are manual, require
-confirmation, and are limited to 100 recipients per campaign in this first
-version. Campaign emails include links to the five latest published posts;
-each post contains consultation booking and optional paid-document links.
-Resend acceptance is recorded separately from final delivery/bounce status.
+The public mailing-list form adds readers immediately without an email
+confirmation step. Campaigns go to active subscribers and include an
+unsubscribe link. Sending uses Resend from `hello@glyphstudio.cv`; Resend must
+verify `glyphstudio.cv` and its DNS records before mail can be delivered. The
+sender and provider credentials stay in Supabase Function secrets. Studio
+sends are manual, require the studio owner's approval, and are limited to 100
+recipients per campaign in this first version. Campaign emails include links
+to the five latest published posts; each post contains consultation booking
+and optional paid-document links. Resend acceptance is recorded separately
+from final delivery/bounce status.
 
 Published posts can offer the GLYPH consultation menu in NGN or USD and an
 optional paid PDF with both prices set by the studio. Bachs checkout links
@@ -101,9 +102,10 @@ service; GLYPH does not publish on the studio's social accounts.
 
 Apply the migrations and deploy the newsletter Edge Function as described in
 [`setup.md`](./setup.md#storybrand-blog-and-newsletter). Configure
-`RESEND_API_KEY`, `NEWSLETTER_FROM`, and `PUBLIC_APP_URL` before using signup
-confirmation or sending. No domain secret or sending credential belongs in
-the frontend or a `VITE_*` variable.
+`RESEND_API_KEY`, `NEWSLETTER_FROM`, and `PUBLIC_APP_URL` before sending
+campaigns. Joining the list does not send an email; subscribers can
+unsubscribe using the link included with every campaign. No domain secret or
+sending credential belongs in the frontend or a `VITE_*` variable.
 
 A community needs its own moderation and access model. An inquiry assistant
 must be constrained to studio-approved service/pricing information and hand

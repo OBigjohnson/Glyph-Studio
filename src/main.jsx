@@ -323,7 +323,7 @@ function NewsletterForm() {
       setError(data?.error || await edgeFunctionError(requestError, 'Could not submit your subscription.'))
       return
     }
-    setMessage('Check your inbox for a confirmation link. Your subscription starts after you confirm.')
+    setMessage('You’re on the list! Thanks for subscribing.')
     formElement.reset()
   }
 
@@ -334,7 +334,7 @@ function NewsletterForm() {
     <button className="button button-dark" disabled={busy}>{busy ? 'Joining…' : 'Join the list'} <ArrowRight size={15} /></button>
     {error && <span className="newsletter-feedback newsletter-error" role="alert">{error}</span>}
     {message && <span className="newsletter-feedback" role="status">{message}</span>}
-    <small>Double opt-in. Unsubscribe any time.</small>
+    <small>No confirmation needed. Unsubscribe any time.</small>
   </form>
 }
 
@@ -493,13 +493,19 @@ function NewsletterAction() {
   const [error, setError] = useState('')
   useEffect(() => {
     let active = true
-    const action = location.pathname.endsWith('/confirm') ? 'confirm' : 'unsubscribe'
+    if (location.pathname.endsWith('/confirm')) {
+      setError('')
+      setMessage('Your subscription is active. No email confirmation is needed to join the mailing list.')
+      return () => { active = false }
+    }
+    setError('')
+    setMessage('Updating your mailing list preference…')
     const token = new URLSearchParams(location.search).get('token')
     if (!supabase || !token) {
       setError('This newsletter link is incomplete or unavailable.')
       return () => { active = false }
     }
-    supabase.functions.invoke('newsletter', { body: { action, token } })
+    supabase.functions.invoke('newsletter', { body: { action: 'unsubscribe', token } })
       .then(({ data, error: requestError }) => {
         if (!active) return
         if (requestError || data?.error) {
@@ -2302,7 +2308,7 @@ function StudioEditorial() {
         .eq('workspace_id', workspace.id)
         .order('updated_at', { ascending: false }),
       supabase.from('newsletter_subscribers')
-        .select('id, email, confirmed_at, unsubscribed_at, created_at')
+        .select('id, email, unsubscribed_at, created_at')
         .eq('workspace_id', workspace.id)
         .order('created_at', { ascending: false }),
       supabase.from('newsletter_campaigns')
@@ -2683,12 +2689,12 @@ function StudioEditorial() {
       setError('Add an email subject and body before sending.')
       return
     }
-    const confirmedCount = subscribers.filter((subscriber) => subscriber.confirmed_at && !subscriber.unsubscribed_at).length
-    if (!confirmedCount) {
-      setError('There are no confirmed subscribers yet. Add the newsletter signup to your site and wait for readers to confirm.')
+    const activeSubscriberCount = subscribers.filter((subscriber) => !subscriber.unsubscribed_at).length
+    if (!activeSubscriberCount) {
+      setError('There are no active subscribers yet. Add the newsletter signup to your site and invite readers to join.')
       return
     }
-    if (!window.confirm(`Send “${emailDraft.title}” to ${confirmedCount} confirmed subscriber${confirmedCount === 1 ? '' : 's'}?`)) return
+    if (!window.confirm(`Send “${emailDraft.title}” to ${activeSubscriberCount} active subscriber${activeSubscriberCount === 1 ? '' : 's'}?`)) return
     setSending(true)
     setError('')
     setMessage('')
@@ -2706,12 +2712,12 @@ function StudioEditorial() {
       setError(data?.error || await edgeFunctionError(sendError, 'Could not send this newsletter.'))
       return
     }
-    setMessage(`Resend accepted the newsletter for ${data.recipient_count} confirmed subscribers. Check Resend for delivery or bounce status.`)
+    setMessage(`Resend accepted the newsletter for ${data.recipient_count} active subscribers. Check Resend for delivery or bounce status.`)
     setEmailDraft(null)
     await refresh()
   }
 
-  const confirmedCount = subscribers.filter((subscriber) => subscriber.confirmed_at && !subscriber.unsubscribed_at).length
+  const activeSubscriberCount = subscribers.filter((subscriber) => !subscriber.unsubscribed_at).length
 
   return <main className="studio-page studio-editorial">
     <StudioPageHeader kicker="YOUR STUDIO / EDITORIAL" title="Your words, your story." action={<Link className="button button-outline" to="/blog">View the public blog <ExternalLink size={15} /></Link>} />
@@ -2719,7 +2725,7 @@ function StudioEditorial() {
     {!isSupabaseConfigured && <p className="notice-error">{supabaseConfigMessage}</p>}
     {error && <p className="notice-error">{error}</p>}
     {message && <p className="notice-success">{message}</p>}
-    <section className="editorial-stats"><div><span>CONFIRMED SUBSCRIBERS</span><b>{confirmedCount}</b></div><div><span>BLOG POSTS</span><b>{posts?.length ?? '—'}</b></div><div><span>DOMAIN SENDER</span><b>hello@glyphstudio.cv</b></div></section>
+    <section className="editorial-stats"><div><span>ACTIVE SUBSCRIBERS</span><b>{activeSubscriberCount}</b></div><div><span>BLOG POSTS</span><b>{posts?.length ?? '—'}</b></div><div><span>DOMAIN SENDER</span><b>hello@glyphstudio.cv</b></div></section>
     <div className="editorial-layout">
       <section className="editorial-compose">
         <div className="studio-section-heading"><div><p className="kicker">CREATE A REVIEWABLE DRAFT</p><h2>Write it yourself.</h2></div></div>
@@ -2730,8 +2736,8 @@ function StudioEditorial() {
       </section>
       <section className="editorial-audience">
         <div className="studio-section-heading"><div><p className="kicker">PERMISSION-BASED MAILING LIST</p><h2>Your readers choose.</h2></div></div>
-        <p>Signup is double opt-in. Only confirmed readers can receive an email, and every send includes an unsubscribe link.</p>
-        <div className="subscriber-count"><Mail size={18} /><b>{confirmedCount}</b><span>confirmed / {subscribers.filter((subscriber) => !subscriber.unsubscribed_at).length} active or awaiting confirmation</span></div>
+        <p>Readers join immediately without an email confirmation. Every campaign includes an unsubscribe link.</p>
+        <div className="subscriber-count"><Mail size={18} /><b>{activeSubscriberCount}</b><span>active subscribers</span></div>
         {campaigns.length > 0 && <div className="editorial-history"><b>Recent sends</b>{campaigns.map((campaign) => <div key={campaign.id}><span>{campaign.subject}</span><small>{campaign.recipient_count} · {new Date(campaign.sent_at).toLocaleDateString()}</small></div>)}</div>}
       </section>
     </div>
@@ -2773,7 +2779,7 @@ function StudioEditorial() {
       <label>Preview text<input maxLength="200" value={emailDraft.preview_text || ''} onChange={(event) => setEmailDraft((current) => ({ ...current, preview_text: event.target.value }))} /></label>
       <label>Email body<textarea required className="editorial-body-input" rows="12" maxLength="12000" value={emailDraft.body} onChange={(event) => setEmailDraft((current) => ({ ...current, body: event.target.value }))} /></label>
       <p className="muted-copy">From hello@glyphstudio.cv. Send is enabled only after Resend and your sending domain are configured.</p>
-      <button className="button button-dark" disabled={sending || !confirmedCount || !emailDraft.title.trim() || emailDraft.title.trim().length >= 50} onClick={sendEmail}>{sending ? 'Sending…' : `Send to ${confirmedCount} confirmed subscribers`} <Send size={15} /></button>
+      <button className="button button-dark" disabled={sending || !activeSubscriberCount || !emailDraft.title.trim() || emailDraft.title.trim().length >= 50} onClick={sendEmail}>{sending ? 'Sending…' : `Send to ${activeSubscriberCount} active subscribers`} <Send size={15} /></button>
     </section>}
     <section className="editorial-posts">
       <div className="studio-section-heading"><div><p className="kicker">REVIEW BEFORE IT GOES LIVE</p><h2>Blog drafts and posts</h2></div><Link className="quiet-link" to="/blog">Public blog <ArrowRight size={15} /></Link></div>

@@ -94,7 +94,7 @@ the feature's limits.
 
 ## Blog and newsletter
 
-The public blog, private manual editor, double-opt-in mailing list, and Resend
+The public blog, private manual editor, mailing list, and Resend
 newsletter sender use the
 `20261111100000_storybrand_blog_newsletter.sql` and
 `20261113130000_manual_blog_covers.sql` migrations. Blog copy, titles, and
@@ -121,21 +121,24 @@ written by you. The `newsletter` Edge Function handles signup and delivery.
    ```
 
 4. Open `/studio/editorial` to write and review posts or emails. Published blog
-   articles appear at `/blog`. Email signup requires readers to confirm their
-   address. Only confirmed subscribers can be sent a campaign; sends are manual
-   and currently limited to 100 subscribers per campaign.
+   articles appear at `/blog`. Readers are added to the mailing list as soon
+   as they submit their email; every campaign includes an unsubscribe link.
+   Sends are manual and currently limited to 100 active subscribers per
+   campaign.
 
-5. Test signup and confirmation using an address you control, then test a
-   campaign with that confirmed address before sending to a larger list.
+5. Test signup using an address you control, verify it appears as active in
+   the editorial workspace, then test a campaign with that address before
+   sending to a larger list.
    Resend acceptance means the provider accepted the message, not that it
    reached the inbox; check Resend for delivery and bounce status.
 
-The signup function needs `RESEND_API_KEY`, `NEWSLETTER_FROM`, and
-`PUBLIC_APP_URL`. If signup fails, the form now shows the Edge Function's
-response; missing secrets, an unverified sender, and provider rejections must
-be corrected in Supabase/Resend. No email system can guarantee inbox placement.
-Use a verified sending domain with its exact SPF and DKIM records and a
-DMARC policy, send only to opted-in readers, and monitor delivery, bounces,
+The newsletter function needs `RESEND_API_KEY`, `NEWSLETTER_FROM`, and
+`PUBLIC_APP_URL` to send campaigns; signing up does not send an email. If
+signup fails, the form shows the Edge Function's response. Missing secrets,
+an unverified sender, and provider rejections must be corrected in
+Supabase/Resend. No email system can guarantee inbox placement. Use a verified
+sending domain with its exact SPF and DKIM records and a DMARC policy, send
+only to people who requested updates, and monitor delivery, bounces,
 complaints, and unsubscribe requests in Resend.
 
 ## Paid blog consultations and documents
