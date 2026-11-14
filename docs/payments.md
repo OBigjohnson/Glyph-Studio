@@ -73,6 +73,12 @@ requests to the studio contact email. See [setup.md](./setup.md#paid-blog-consul
   the same signed Bachs webhook. A success redirect alone never marks one as
   paid; the webhook must match the checkout amount and currency before issuing
   a receipt, notifying the studio, or allowing a private PDF download.
+  After confirmation, both purchase types are included in **Studio → Finance**
+  income totals by currency, with receipt links stored alongside the invoice
+  receipts. Paid consultation customer details and requested Africa/Lagos times,
+  and paid PDF customer details, are also listed in **Studio → Blog & email**.
+  The studio can open a pre-addressed email to each buyer with a GLYPH Studio
+  signature; send it from the hello@glyphstudio.cv account.
 - Never put Bachs API keys, webhook secrets, Supabase `service_role` keys, or
   checkout credentials in `VITE_*` variables, browser code, or source control.
 

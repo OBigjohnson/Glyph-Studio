@@ -2555,9 +2555,8 @@ function StudioEditorial() {
         .order('sent_at', { ascending: false })
         .limit(10),
       supabase.from('editorial_purchases')
-        .select('id, purchase_type, product_title, customer_name, customer_email, duration_minutes, requested_at, requested_timezone, currency, amount, status, receipt_number, created_at, paid_at')
+        .select('id, token, purchase_type, product_title, customer_name, customer_email, duration_minutes, requested_at, requested_timezone, currency, amount, status, receipt_number, created_at, paid_at')
         .eq('workspace_id', workspace.id)
-        .eq('purchase_type', 'consultation')
         .order('created_at', { ascending: false }),
     ])
     const failed = [postResult, subscriberResult, campaignResult, purchaseResult].find((result) => result.error)
@@ -2573,6 +2572,19 @@ function StudioEditorial() {
   }, [workspace?.id])
 
   useEffect(() => { refresh() }, [refresh])
+
+  useEffect(() => {
+    if (!supabase || !workspace?.id) return undefined
+    const channel = supabase.channel(`editorial-purchases:${workspace.id}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'editorial_purchases',
+        filter: `workspace_id=eq.${workspace.id}`,
+      }, refresh)
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [workspace?.id, refresh])
 
   useEffect(() => {
     if (!coverFile) {
@@ -3029,15 +3041,30 @@ function StudioEditorial() {
     </section>
     <section className="editorial-purchases">
       <div className="studio-section-heading"><div><p className="kicker">PAID BOOKINGS</p><h2>Consultation requests</h2></div></div>
-      <p className="muted-copy">Requests appear here after Bachs confirms payment. Contact each client to confirm their requested Africa/Lagos appointment time.</p>
-      {purchases.length ? <div className="editorial-purchase-list">{purchases.map((purchase) => {
+      <p className="muted-copy">Paid requests include the client’s details, selected service, amount, and requested Africa/Lagos time. Use your hello@glyphstudio.cv account to email clients and confirm their appointment.</p>
+      {purchases.some((purchase) => purchase.purchase_type === 'consultation' && purchase.status === 'paid') ? <div className="editorial-purchase-list">{purchases.filter((purchase) => purchase.purchase_type === 'consultation' && purchase.status === 'paid').map((purchase) => {
         const appointment = purchase.requested_at ? new Date(`${purchase.requested_at}+01:00`) : null
+        const subject = encodeURIComponent(`Your GLYPH Studio consultation · ${purchase.product_title}`)
+        const body = encodeURIComponent(`Hello ${purchase.customer_name || 'there'},\n\nI’m reaching out about your paid consultation request for ${purchase.product_title}.\n\nRequested time: ${appointment ? new Intl.DateTimeFormat(undefined, { dateStyle: 'full', timeStyle: 'short', timeZone: 'Africa/Lagos' }).format(appointment) : 'Not provided'} (Africa/Lagos)\n\nRegards,\nGLYPH Studio\nhello@glyphstudio.cv`)
         return <article key={purchase.id}>
-          <div><b>{purchase.customer_name || 'New client'}</b><a href={`mailto:${purchase.customer_email}`}>{purchase.customer_email}</a></div>
-          <div><b>{purchase.product_title}</b><span>{appointment ? `${new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Africa/Lagos' }).format(appointment)} · Africa/Lagos` : 'Date not provided'}</span></div>
-          <div><b>{purchase.currency} {Number(purchase.amount).toFixed(2)}</b><span>{purchase.status === 'paid' ? `Paid · ${purchase.receipt_number}` : 'Awaiting payment'}</span></div>
+          <div><b>{purchase.customer_name || 'Name not provided'}</b><a href={`mailto:${purchase.customer_email}?subject=${subject}&body=${body}`}>{purchase.customer_email}</a><span>Receipt {purchase.receipt_number}</span></div>
+          <div><b>{purchase.product_title}</b><span>{purchase.duration_minutes} minutes</span><span>{appointment ? `${new Intl.DateTimeFormat(undefined, { dateStyle: 'full', timeStyle: 'short', timeZone: 'Africa/Lagos' }).format(appointment)} · Africa/Lagos` : 'Date not provided'}</span></div>
+          <div><b>{purchase.currency} {Number(purchase.amount).toFixed(2)}</b><span>Paid {purchase.paid_at ? new Date(purchase.paid_at).toLocaleDateString() : ''}</span><a href={appPath(`/purchase/${purchase.token}`)} target="_blank" rel="noreferrer">View receipt</a></div>
         </article>
       })}</div> : <div className="studio-empty"><CalendarDays /><h3>No consultation requests yet.</h3><p>Paid bookings from your blog posts will appear here.</p></div>}
+    </section>
+    <section className="editorial-purchases">
+      <div className="studio-section-heading"><div><p className="kicker">PAID DOCUMENTS</p><h2>PDF customers</h2></div></div>
+      <p className="muted-copy">Every confirmed PDF purchase is listed here with the buyer’s details and receipt.</p>
+      {purchases.some((purchase) => purchase.purchase_type === 'document' && purchase.status === 'paid') ? <div className="editorial-purchase-list">{purchases.filter((purchase) => purchase.purchase_type === 'document' && purchase.status === 'paid').map((purchase) => {
+        const subject = encodeURIComponent(`Your GLYPH Studio purchase · ${purchase.product_title}`)
+        const body = encodeURIComponent(`Hello ${purchase.customer_name || 'there'},\n\nI’m reaching out about your purchase of ${purchase.product_title}.\n\nRegards,\nGLYPH Studio\nhello@glyphstudio.cv`)
+        return <article key={purchase.id}>
+          <div><b>{purchase.customer_name || 'Name not provided'}</b><a href={`mailto:${purchase.customer_email}?subject=${subject}&body=${body}`}>{purchase.customer_email}</a></div>
+          <div><b>{purchase.product_title}</b><span>Paid {purchase.paid_at ? new Date(purchase.paid_at).toLocaleDateString() : ''}</span></div>
+          <div><b>{purchase.currency} {Number(purchase.amount).toFixed(2)}</b><span>Receipt {purchase.receipt_number}</span><a href={appPath(`/purchase/${purchase.token}`)} target="_blank" rel="noreferrer">View receipt</a></div>
+        </article>
+      })}</div> : <div className="studio-empty"><FileText /><h3>No PDF purchases yet.</h3><p>Buyers will appear here after their payment is confirmed.</p></div>}
     </section>
   </main>
 }
@@ -3585,6 +3612,7 @@ function CalendarPost({ post, assets, copied, copiedAlt, copiedVideo, copiedImag
 function Finance() {
   const { user, workspace, error, setError } = useStudioWorkspace()
   const [invoices, setInvoices] = useState([])
+  const [editorialPurchases, setEditorialPurchases] = useState([])
   const [lineItems, setLineItems] = useState([{ description: '', quantity: '1', unit_amount: '' }])
   const [expenses, setExpenses] = useState([])
   const [clients, setClients] = useState([])
@@ -3607,15 +3635,18 @@ function Finance() {
       supabase.from('expenses').select('id, description, category, amount, incurred_on').eq('workspace_id', workspace.id).order('incurred_on', { ascending: false }),
       supabase.from('clients').select('id, name').eq('workspace_id', workspace.id).order('name'),
       supabase.from('projects').select('id, name').eq('workspace_id', workspace.id).order('name'),
-    ]).then(([invoiceResult, expenseResult, clientResult, projectResult]) => {
+      supabase.from('editorial_purchases').select('id, token, purchase_type, product_title, customer_name, customer_email, currency, amount, status, receipt_number, paid_at').eq('workspace_id', workspace.id).eq('status', 'paid').order('paid_at', { ascending: false }),
+    ]).then(([invoiceResult, expenseResult, clientResult, projectResult, purchaseResult]) => {
       if (invoiceResult.error) setError(invoiceResult.error.message)
       if (expenseResult.error) setError(expenseResult.error.message)
       if (clientResult.error) setError(clientResult.error.message)
       if (projectResult.error) setError(projectResult.error.message)
+      if (purchaseResult.error) setError(purchaseResult.error.message)
       setInvoices(invoiceResult.data || [])
       setExpenses(expenseResult.data || [])
       setClients(clientResult.data || [])
       setProjects(projectResult.data || [])
+      setEditorialPurchases(purchaseResult.data || [])
     })
   }, [workspace?.id, setError])
   useEffect(() => {
@@ -3629,6 +3660,15 @@ function Finance() {
       if (invoiceError) setError(invoiceError.message)
       else setInvoices(data || [])
     }
+    const refreshEditorialPurchases = async () => {
+      const { data, error: purchaseError } = await supabase.from('editorial_purchases')
+        .select('id, token, purchase_type, product_title, customer_name, customer_email, currency, amount, status, receipt_number, paid_at')
+        .eq('workspace_id', workspace.id)
+        .eq('status', 'paid')
+        .order('paid_at', { ascending: false })
+      if (purchaseError) setError(purchaseError.message)
+      else setEditorialPurchases(data || [])
+    }
     const channel = supabase.channel(`finance-payments:${workspace.id}`)
       .on('postgres_changes', {
         event: '*',
@@ -3641,6 +3681,12 @@ function Finance() {
         schema: 'public',
         table: 'payments',
       }, refreshInvoices)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'editorial_purchases',
+        filter: `workspace_id=eq.${workspace.id}`,
+      }, refreshEditorialPurchases)
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [workspace?.id, setError])
@@ -3880,15 +3926,27 @@ function Finance() {
     else if (!data?.length) setError('Expense was not deleted. Refresh the page and check that you still have access to this workspace.')
     else setExpenses((current) => current.filter((entry) => entry.id !== expense.id))
   }
-  const totalPaid = invoices.reduce((sum, invoice) => sum + asRows(invoice.payments).filter((payment) => payment.status === 'succeeded').reduce((subtotal, payment) => subtotal + Number(payment.amount), 0), 0)
+  const incomeByCurrency = {}
+  invoices.forEach((invoice) => {
+    const currency = invoice.currency || 'NGN'
+    incomeByCurrency[currency] = (incomeByCurrency[currency] || 0)
+      + asRows(invoice.payments).filter((payment) => payment.status === 'succeeded').reduce((subtotal, payment) => subtotal + Number(payment.amount), 0)
+  })
+  editorialPurchases.forEach((purchase) => {
+    incomeByCurrency[purchase.currency] = (incomeByCurrency[purchase.currency] || 0) + Number(purchase.amount)
+  })
+  const incomeSummary = Object.entries(incomeByCurrency)
+    .sort(([currencyA], [currencyB]) => currencyA.localeCompare(currencyB))
+    .map(([currency, amount]) => currencyMoney(amount, currency))
+  const ngnIncome = incomeByCurrency.NGN || 0
   const totalExpenses = expenses.reduce((sum, expense) => sum + Number(expense.amount), 0)
   const receipts = invoices.flatMap((invoice) => asRows(invoice.payments).flatMap((payment) => asRows(payment.receipts).filter((receipt) => receipt?.receipt_number).map((receipt) => ({ receipt, payment, invoice }))))
   return <main className="studio-page">
     <StudioPageHeader kicker="THE BUSINESS / FINANCE" title="Keep the<br />numbers clear." action={<div className="finance-actions"><button className="button button-soft" onClick={() => setExpenseForm(true)}><Plus size={15} /> Expense</button><button className="button button-yellow" disabled={!workspace} onClick={openInvoiceForm}><Plus size={16} /> Create invoice</button></div>} />
     {error && <p className="notice-error">{error}</p>}
     {financeShareMessage && <p className="notice-success">{financeShareMessage}</p>}
-    <div className="finance-note"><LockKeyhole size={18} /><div><b>Bachs checkout and manual transfer are enabled.</b><span>Copy an invoice checkout link for external clients or share the invoice in the portal. Bachs-confirmed payments create receipts for both sides, update the balance, and refresh Finance automatically.</span></div></div>
-    <div className="dashboard-stats finance-stats"><div><span>INCOME</span><b>{money(totalPaid)}</b></div><div><span>RECORDED EXPENSES</span><b>{money(totalExpenses)}</b></div><div><span>NET (RECORDED)</span><b>{money(totalPaid - totalExpenses)}</b></div></div>
+    <div className="finance-note"><LockKeyhole size={18} /><div><b>Verified invoice and editorial payments are recorded here.</b><span>Invoice payments, paid consultations, and paid PDFs appear as income with their receipts. Editorial purchases refresh automatically after Bachs confirms payment.</span></div></div>
+    <div className="dashboard-stats finance-stats"><div><span>INCOME</span><b>{incomeSummary.length ? incomeSummary.join(' · ') : currencyMoney(0, 'NGN')}</b></div><div><span>RECORDED EXPENSES · NGN</span><b>{money(totalExpenses)}</b></div><div><span>NET · NGN</span><b>{money(ngnIncome - totalExpenses)}</b></div></div>
     <div className="studio-section-heading"><div><p className="kicker">STUDIO RECORDS</p><h2>Invoices</h2></div></div>
     {invoices.length ? <div className="record-list">{invoices.map((invoice) => {
       const paid = asRows(invoice.payments).filter((payment) => payment.status === 'succeeded').reduce((sum, payment) => sum + Number(payment.amount), 0)
@@ -3898,6 +3956,8 @@ function Finance() {
     })}</div> : <div className="studio-empty"><FileText /><h3>No invoices yet.</h3><p>Create an invoice, copy its Bachs checkout link, or record a verified bank transfer. Each confirmed payment issues a receipt and updates the balance.</p><button className="button button-dark" onClick={openInvoiceForm}><Plus size={15} /> Create invoice</button></div>}
     <div className="studio-section-heading"><div><p className="kicker">PAYMENT RECORDS</p><h2>Receipts</h2></div></div>
     {receipts.length ? <div className="record-list">{receipts.map(({ receipt, payment, invoice }) => <article className="record-row" key={receipt.receipt_number}><FileText /><div className="record-main"><b>{receipt.receipt_number} · {invoice.clients?.name || 'Client not linked'}</b><span>Invoice #{invoice.number} · {money(Number(payment.amount))} · {payment.paid_at ? new Date(payment.paid_at).toLocaleDateString() : new Date(receipt.issued_at).toLocaleDateString()}</span><small>{invoice.shared_with_client ? 'Client copy available in portal' : 'Client copy not shared yet'}</small></div><button className="button button-soft" onClick={() => setPrintInvoice({ ...invoice, receipt: { ...receipt, payment } })}>Print studio receipt</button><button className="button button-soft" onClick={() => setPrintInvoice({ ...invoice, receipt: { ...receipt, payment }, receiptAudience: 'client' })}>Print client copy</button><button className="button button-soft" disabled={!invoice.client_id || sharingReceiptId === receipt.receipt_number} onClick={() => shareReceipt(invoice, receipt)}>{sharingReceiptId === receipt.receipt_number ? 'Preparing…' : 'Copy client receipt link'}</button><button className="button button-danger" disabled={!receipt.id || deletingReceiptId === receipt.id} onClick={() => deleteReceipt(invoice, payment, receipt)} aria-label={`Delete receipt ${receipt.receipt_number}`}>{deletingReceiptId === receipt.id ? 'Deleting…' : <><Trash2 size={15} /> Delete</>}</button></article>)}</div> : <p className="empty-copy">Receipts generated from verified payments will be stored here.</p>}
+    <div className="studio-section-heading"><div><p className="kicker">EDITORIAL SALES</p><h2>Consultation & PDF receipts</h2></div></div>
+    {editorialPurchases.length ? <div className="record-list">{editorialPurchases.map((purchase) => <article className="record-row" key={purchase.id}><FileText /><div className="record-main"><b>{purchase.receipt_number} · {purchase.customer_name || purchase.customer_email}</b><span>{purchase.purchase_type === 'consultation' ? 'Consultation' : 'PDF'} · {purchase.product_title}</span><small>{currencyMoney(Number(purchase.amount), purchase.currency)} · {purchase.paid_at ? new Date(purchase.paid_at).toLocaleDateString() : ''} · {purchase.customer_email}</small></div><a className="button button-soft" href={appPath(`/purchase/${purchase.token}`)} target="_blank" rel="noreferrer">View receipt</a></article>)}</div> : <p className="empty-copy">Receipts from paid consultations and PDFs will be stored here after payment is confirmed.</p>}
     <div className="studio-section-heading"><div><p className="kicker">BUSINESS COSTS</p><h2>Expenses</h2></div></div>
     {expenses.length ? <div className="record-list">{expenses.map((expense) => <div className="record-row" key={expense.id}><span className="project-index index-2"><FileText size={17} /></span><div className="record-main"><b>{expense.description}</b><span>{expense.category} · {expense.incurred_on}</span></div><b>{money(Number(expense.amount))}</b><button className="button button-danger" disabled={deletingExpenseId === expense.id} onClick={() => deleteExpense(expense)} aria-label={`Delete expense ${expense.description}`}>{deletingExpenseId === expense.id ? 'Deleting…' : <><Trash2 size={15} /> Delete</>}</button></div>)}</div> : <p className="empty-copy">Record business costs to calculate net income from real records.</p>}
     {invoiceForm && <Modal title="Create an invoice" onClose={() => setInvoiceForm(false)}><form onSubmit={createInvoice}><label>Invoice number<input name="number" required maxLength="80" placeholder="e.g. GL-001" /></label><label>Client<select name="client_id" defaultValue=""><option value="">No client linked</option>{clients.map((client) => <option key={client.id} value={client.id}>{client.name}</option>)}</select></label><label>Project<select name="project_id" defaultValue=""><option value="">No project linked</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label><div className="invoice-line-items"><div className="invoice-line-items-heading"><b>Line items</b><button className="button button-soft" type="button" onClick={() => setLineItems((current) => [...current, { description: '', quantity: '1', unit_amount: '' }])}><Plus size={14} /> Add item</button></div>{lineItems.map((item, index) => <div className="invoice-line-row" key={index}><label>Description<input value={item.description} onChange={(event) => updateLineItem(index, 'description', event.target.value)} maxLength="500" placeholder="Brand identity design" required /></label><label>Qty<input type="number" value={item.quantity} onChange={(event) => updateLineItem(index, 'quantity', event.target.value)} min="0.01" step="0.01" required /></label><label>Unit price<input type="number" value={item.unit_amount} onChange={(event) => updateLineItem(index, 'unit_amount', event.target.value)} min="0" step="0.01" required /></label>{lineItems.length > 1 && <button className="icon-button invoice-line-remove" type="button" aria-label={`Remove line item ${index + 1}`} onClick={() => setLineItems((current) => current.filter((_, itemIndex) => itemIndex !== index))}><X size={15} /></button>}</div>)}    <div className="invoice-total-preview"><span>Invoice total</span><b>{money(lineItems.reduce((sum, item) => sum + Math.round((Number(item.quantity) || 0) * (Number(item.unit_amount) || 0) * 100) / 100, 0))}</b></div></div><label>Due date<input name="due_date" type="date" /></label><p className="muted-copy">Invoices linked to a client are shared to their portal automatically. Clients can choose an online deposit or pay the remaining balance using their checkout link.</p><button className="button button-dark" disabled={saving}>{saving ? 'Saving…' : 'Create invoice'} <ArrowRight size={15} /></button></form></Modal>}
@@ -4864,6 +4924,14 @@ function RecordForm({ onSubmit, children }) {
 
 function money(amount) {
   return new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 2 }).format(amount || 0)
+}
+
+function currencyMoney(amount, currency) {
+  return new Intl.NumberFormat('en-NG', {
+    style: 'currency',
+    currency,
+    maximumFractionDigits: 2,
+  }).format(amount || 0)
 }
 
 function asRows(value) {

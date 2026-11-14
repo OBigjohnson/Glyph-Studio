@@ -182,6 +182,11 @@ in **Studio → Blog & email → Consultation requests** after Bachs confirms
 payment. Buyers must enter an email to receive their receipt and, for PDF
 purchases, a secure download link. The download is also available on the
 purchase receipt page after confirmation.
+Confirmed consultation and PDF payments also appear as income in
+**Studio → Finance**, with a receipt link for each buyer. **Studio → Blog &
+email** lists paid consultation details and requested appointment times
+separately from paid PDF customers. Each buyer row includes a pre-addressed
+email draft signed as GLYPH Studio / hello@glyphstudio.cv.
 
 Consultation requests collect the buyer's preferred date and time in
 Africa/Lagos time. GLYPH does not check calendar availability or automatically
