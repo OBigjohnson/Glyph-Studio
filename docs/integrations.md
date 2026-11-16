@@ -27,9 +27,13 @@ are not emailed. Manual verified bank transfers remain supported.
 The workspace-private social calendar supports Instagram, TikTok, Facebook, X,
 LinkedIn, and YouTube. Choose enabled platforms in Studio settings. When
 generating content, the authenticated Supabase Edge Function reads the studio's
-portfolio project descriptions and recent post usage, then Gemini balances
-educational solution posts with portfolio stories so the calendar is not limited
-to showcasing work. Educational posts provide actionable advice; portfolio
+saved brand profile and services, portfolio project descriptions, and recent
+post usage. Gemini follows a concise StoryBrand structure: customer and desired
+change, problem, empathetic guide, practical plan, clear action, proportionate
+stakes, and a believable success picture. The calendar balances educational
+solution posts with portfolio stories when projects exist. With an empty
+portfolio, generation automatically creates educational posts from the studio
+profile and services, without requiring or inventing client work. Portfolio
 stories connect a real audience need to a relevant project/service. Captions
 are distinct and platform-native, with natural sales invitations rather than
 generic design announcements. Educational posts also receive an original

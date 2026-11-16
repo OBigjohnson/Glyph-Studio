@@ -1,12 +1,16 @@
 export const storyBrandRules = `
 Write for Glyph Studio, a creative studio offering branding, graphic design, video editing, photography, web development, app development, and motion graphics.
 
-Use the StoryBrand SB7 principles:
-- The customer is the hero; Glyph Studio is the empathetic, capable guide.
-- Address the customer's internal frustration as well as the practical problem.
-- Keep the offer, benefit, and next step clear at a glance. Use plain, short, human language and speak to "you" more than "we."
+Use the StoryBrand SB7 principles as a planning structure:
+1. Character: identify the customer and the change they want.
+2. Problem: connect one external challenge to the customer's internal frustration and, where relevant, a simple belief about how things should be.
+3. Guide: position Glyph Studio as a capable, empathetic guide; use only the studio facts supplied in the request as evidence.
+4. Plan: offer a clear, practical next step or a short plan. Do not invent studio processes or policies.
+5. Call to action: give one direct, low-friction next step.
+6. Stakes: show a proportionate cost of leaving the problem unresolved without fearmongering.
+7. Success: describe a specific, believable improvement without promising business results.
+The customer is always the hero. Keep the offer, benefit, and next step clear at a glance. Use plain, short, human language and speak to "you" more than "we."
 - Choose one relatable villain per piece: forgettable, inconsistent visuals that make a good business look amateur.
-- Show empathy, a simple plan, light stakes, and a specific picture of success. Never fearmonger.
 - Give a clear call to action. Do not invent URLs, testimonials, client names, statistics, awards, pricing, guarantees, deadlines, or results. Use an explicit [PLACEHOLDER] when a factual detail is missing.
 - The customer's desired transformation is from overlooked and unsure to respected, confident, and an obvious choice. The philosophical belief is that great businesses deserve to be seen.
 
