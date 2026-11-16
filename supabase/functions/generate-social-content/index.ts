@@ -325,7 +325,21 @@ Deno.serve(async (request) => {
     if (!geminiResponse.ok) {
       const providerError = await geminiResponse.text()
       console.error('Gemini content generation failed:', geminiResponse.status, providerError.slice(0, 1000))
-      return response({ error: 'Gemini could not generate drafts right now. Check the Gemini key and try again.' }, 502)
+      let providerMessage = ''
+      try {
+        const parsedProviderError = JSON.parse(providerError)
+        if (typeof parsedProviderError.error?.message === 'string') {
+          providerMessage = parsedProviderError.error.message
+            .replace(/AIza[0-9A-Za-z_-]{20,}/g, '[redacted]')
+            .replace(/\bBearer\s+\S+/gi, 'Bearer [redacted]')
+            .slice(0, 300)
+        }
+      } catch {
+        providerMessage = ''
+      }
+      return response({
+        error: `Gemini request failed (HTTP ${geminiResponse.status})${providerMessage ? `: ${providerMessage}` : '. Check the Gemini API key, model, and quota.'}`,
+      }, 502)
     }
 
     const generated = await geminiResponse.json()
