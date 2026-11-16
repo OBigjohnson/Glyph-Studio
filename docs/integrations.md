@@ -40,8 +40,14 @@ generic design announcements. Educational posts also receive an original
 Gemini-generated image saved privately in the studio's storage and previewed
 before saving the post. If image quota or availability prevents generation,
 captions remain reviewable and saveable with their image prompt for later use.
-Each caption opens with a curiosity-led, truthful hook and ends with a
-platform-appropriate call to action linking directly to the public contact page.
+When published blog posts are available, Gemini uses the least-recently-used
+article as the source for a short audience-centered story, rotating across
+published posts over time. Captions include the article link and a link to its
+paid guide when attached, or to the article's consultation section otherwise.
+Without a published blog post, generation continues with educational or
+portfolio-based content and a contact-page call to action. Each caption opens
+with a truthful, engaging hook and a useful insight; it does not invent
+customer anecdotes or article claims.
 Instagram, TikTok, and YouTube drafts include an
 editable Google Flow prompt for a vertical short-form video. Prompts guide Flow
 to preserve supplied project artwork when used as a visual reference, or to
