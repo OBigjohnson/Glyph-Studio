@@ -3216,26 +3216,58 @@ function ContentCalendar() {
     const selectedWork = data?.project || null
     const contentType = data?.content_type
       || (selectedWork ? 'portfolio_story' : 'educational_solution')
-    if (!['blog_story', 'portfolio_story', 'educational_solution'].includes(contentType)
-      || (contentType === 'portfolio_story' && (!selectedWork || typeof selectedWork.id !== 'string'))
-      || (contentType !== 'portfolio_story' && selectedWork)
-      || (data.blog_source !== null && data.blog_source !== undefined
-        && (typeof data.blog_source.id !== 'string'
-          || typeof data.blog_source.title !== 'string'
-          || typeof data.blog_source.url !== 'string'
-          || typeof data.blog_source.offer_url !== 'string'
-          || typeof data.blog_source.offer_label !== 'string'))
-      || !Array.isArray(data.drafts)
-      || data.drafts.length !== campaignPlatforms.length
-      || !data.storybrand_angle
-      || typeof data.visual_direction !== 'string'
-      || data.drafts.some((draft) => !campaignPlatforms.includes(draft.platform)
-        || typeof draft.caption !== 'string'
-        || !Array.isArray(draft.alternate_hooks)
-        || draft.alternate_hooks.length !== 2
-        || (['instagram', 'tiktok', 'youtube'].includes(draft.platform)
-          && typeof draft.video_prompt !== 'string'))) {
-      setError('The content service returned an incomplete or incompatible response. Please generate again. If it continues, reload the page to update the studio.')
+    const responseIssues = []
+    if (!['blog_story', 'portfolio_story', 'educational_solution'].includes(contentType)) {
+      responseIssues.push(`unsupported content_type "${contentType}"`)
+    }
+    if (contentType === 'portfolio_story' && (!selectedWork || typeof selectedWork.id !== 'string')) {
+      responseIssues.push('portfolio story is missing its project')
+    }
+    if (contentType !== 'portfolio_story' && selectedWork) {
+      responseIssues.push(`unexpected project for "${contentType}"`)
+    }
+    const blogSource = data?.blog_source
+    if (blogSource !== null && blogSource !== undefined
+      && (typeof blogSource.id !== 'string'
+        || typeof blogSource.title !== 'string'
+        || typeof blogSource.url !== 'string'
+        || typeof blogSource.offer_url !== 'string'
+        || typeof blogSource.offer_label !== 'string')) {
+      responseIssues.push('blog_source is missing required fields')
+    }
+    const drafts = Array.isArray(data?.drafts) ? data.drafts : null
+    if (!drafts) {
+      responseIssues.push('drafts is missing or not an array')
+    } else {
+      if (drafts.length !== campaignPlatforms.length) {
+        responseIssues.push(`expected ${campaignPlatforms.length} drafts, received ${drafts.length}`)
+      }
+      drafts.forEach((draft, index) => {
+        if (!draft || typeof draft !== 'object') {
+          responseIssues.push(`draft ${index + 1} is not an object`)
+          return
+        }
+        const label = typeof draft.platform === 'string' ? draft.platform : `draft ${index + 1}`
+        if (!campaignPlatforms.includes(draft.platform)) responseIssues.push(`${label} has an unexpected platform`)
+        if (typeof draft.caption !== 'string') responseIssues.push(`${label} caption is missing`)
+        if (!Array.isArray(draft.alternate_hooks) || draft.alternate_hooks.length !== 2) {
+          responseIssues.push(`${label} must include two alternate hooks`)
+        }
+        if (['instagram', 'tiktok', 'youtube'].includes(draft.platform)
+          && typeof draft.video_prompt !== 'string') {
+          responseIssues.push(`${label} video_prompt is missing`)
+        }
+      })
+    }
+    if (!data?.storybrand_angle) responseIssues.push('storybrand_angle is missing')
+    if (typeof data?.visual_direction !== 'string') responseIssues.push('visual_direction is missing')
+    if (responseIssues.length) {
+      console.error('Content generation response contract mismatch:', {
+        issues: responseIssues,
+        contentType,
+        requestedPlatforms: campaignPlatforms,
+      })
+      setError(`The content service response was incompatible: ${responseIssues.join('; ')}. Please reload the studio and try again.`)
       return
     }
     const selectedAsset = selectedWork ? assets.find((asset) => asset.portfolio_item_id === selectedWork.id) : null
